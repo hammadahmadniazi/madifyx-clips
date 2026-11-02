@@ -1,0 +1,12 @@
+{
+  "name": "madifyx-clips",
+  "version": "0.1.0",
+  "description": "Self-hosted screen recorder with shareable links (a simple Loom replacement)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

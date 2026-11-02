@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library | {{APP_NAME}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-app="{{APP_NAME}}">
+<div class="shell">
+  <aside class="side" id="side"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1 id="libTitle">Your library</h1>
+        <div class="sub" id="count">&nbsp;</div>
+      </div>
+      <div class="lib-tools">
+        <div class="seg hidden" id="scope" role="group" aria-label="Whose videos">
+          <button data-scope="mine" aria-pressed="true">Mine</button>
+          <button data-scope="all" aria-pressed="false">Whole team</button>
+        </div>
+        <label class="search"><span class="hidden">Search</span>
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+          <input class="input" id="search" type="search" placeholder="Search videos">
+        </label>
+      </div>
+    </div>
+
+    <div class="empty hidden" id="empty">
+      <div class="bigdot"></div>
+      <h2>Record your first video</h2>
+      <p>Show your screen, talk it through, and share a link. No one needs an account to watch.</p>
+      <button class="btn primary" id="emptyRecord">Start recording</button>
+    </div>
+    <div class="empty hidden" id="noMatch">
+      <h2>No videos match that search</h2>
+      <p>Try a different word, or clear the search.</p>
+    </div>
+
+    <div class="grid" id="grid"></div>
+  </main>
+</div>
+
+<!-- Recorder -->
+<dialog id="recorder" aria-labelledby="recTitle">
+  <div class="dlg-head">
+    <h2 id="recTitle">New recording</h2>
+    <button class="btn ghost icon" id="recClose" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
+  </div>
+  <div class="dlg-body">
+    <div class="modes" role="group" aria-label="What to record">
+      <button class="mode" data-mode="screencam" aria-pressed="true"><svg class="i" viewBox="0 0 24 24"><rect x="2.5" y="4" width="15" height="10.5" rx="2"/><circle cx="17.5" cy="16.5" r="4"/></svg>Screen and camera</button>
+      <button class="mode" data-mode="screen" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg>Screen only</button>
+      <button class="mode" data-mode="cam" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="6.5" width="12.5" height="11" rx="2"/><path d="m15.5 10.5 5.5-3v9l-5.5-3"/></svg>Camera only</button>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="screen-hint" id="screenHint">
+        <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg>
+        You'll pick a screen, window or tab next
+      </div>
+      <div class="cam" id="camBox"><video id="camPreview" autoplay muted playsinline></video></div>
+    </div>
+
+    <div class="devices">
+      <label class="dev" id="camDev"><span class="hidden">Camera</span>
+        <svg class="i" viewBox="0 0 24 24"><rect x="3" y="6.5" width="12.5" height="11" rx="2"/><path d="m15.5 10.5 5.5-3v9l-5.5-3"/></svg>
+        <select class="input" id="camSelect"><option value="">Camera</option></select>
+      </label>
+      <label class="dev"><span class="hidden">Microphone</span>
+        <svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+        <select class="input" id="micSelect"><option value="">Microphone</option></select>
+      </label>
+    </div>
+    <div class="meter" aria-hidden="true"><div id="micMeter"></div></div>
+
+    <div class="toggle-row">
+      <label id="sysRow"><input type="checkbox" id="optSys" checked> Include computer sound</label>
+      <select class="input" id="quality" style="width:auto;height:32px;font-size:13px">
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="1440">1440p</option>
+      </select>
+    </div>
+
+    <button class="btn block start" id="startBtn"><span class="ring"></span> Start recording</button>
+    <div class="tip" id="tip">Share your entire screen so your camera bubble shows up in the video.</div>
+  </div>
+</dialog>
+
+<!-- Upload -->
+<dialog id="uploader" aria-labelledby="upTitle">
+  <div class="dlg-body" style="padding:26px 24px">
+    <h2 id="upTitle">Saving your video</h2>
+    <p class="muted" id="upText" style="margin:6px 0 18px">This takes a few seconds. Keep this tab open.</p>
+    <div class="progress"><div id="upBar"></div></div>
+    <div id="upActions" class="hidden" style="display:flex;gap:8px;margin-top:18px">
+      <button class="btn primary" id="retryBtn">Try again</button>
+      <button class="btn" id="saveLocalBtn">Download a copy</button>
+      <button class="btn ghost danger-text" id="discardBtn" style="margin-left:auto">Discard</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="renamer" aria-labelledby="rnTitle">
+  <form method="dialog" class="dlg-body" style="padding:24px" id="renameForm">
+    <h2 id="rnTitle">Rename video</h2>
+    <input class="input" id="renameInput" style="margin:16px 0" maxlength="200" required>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="recbar hidden" id="recbar" role="toolbar" aria-label="Recording controls"></div>
+<div class="countdown hidden" id="countdown"></div>
+<video id="pipVideo" muted playsinline autoplay style="position:fixed;left:-10000px;top:0;width:320px;height:320px"></video>
+
+<script src="/static/shell.js"></script>
+<script src="/static/library.js"></script>
+<script src="/static/record.js"></script>
+</body>
+</html>

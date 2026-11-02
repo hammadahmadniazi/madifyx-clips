@@ -1,0 +1,29 @@
+# Runs the app plus Caddy, which gets a free HTTPS certificate for your domain automatically.
+# Usage on the server:  DOMAIN=record.madifyx.com docker compose up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - APP_NAME=${APP_NAME:-Madifyx Clips}
+    volumes:
+      - ./data:/app/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?Set DOMAIN, for example DOMAIN=record.madifyx.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

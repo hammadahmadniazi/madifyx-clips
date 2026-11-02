@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in | {{APP_NAME}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  body { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .art { background: var(--ink); color: #fff; padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
+  .art .logo .mark { background: #fff; }
+  .art .logo .mark::before { background: var(--ink); }
+  .art h2 { font-size: clamp(30px, 3.4vw, 44px); line-height: 1.08; max-width: 12ch; position: relative; z-index: 1; }
+  .art p { color: #A9AEBB; max-width: 34ch; margin: 14px 0 0; position: relative; z-index: 1; }
+  .orb { position: absolute; right: -90px; top: 22%; width: 360px; height: 360px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .08); }
+  .orb::before { content: ''; position: absolute; inset: 60px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .1); }
+  .orb::after { content: ''; position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; margin: -46px; border-radius: 50%; background: var(--rec); box-shadow: 0 0 0 14px rgba(255, 75, 58, .18), 0 0 80px rgba(255, 75, 58, .45); }
+  .art .foot { font-size: 13px; color: #6F7584; position: relative; z-index: 1; }
+  .formside { display: flex; align-items: center; justify-content: center; padding: 40px 24px; background: var(--surface); }
+  form { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
+  form h1 { font-size: 30px; }
+  form .lead { color: var(--muted); margin: -8px 0 6px; }
+  .err { color: #D4291A; font-size: 14px; min-height: 0; }
+  .mobile-logo { display: none; }
+  @media (max-width: 860px) {
+    body { grid-template-columns: 1fr; }
+    .art { display: none; }
+    .formside { align-items: flex-start; padding-top: 12vh; }
+    .mobile-logo { display: inline-flex; margin-bottom: 18px; }
+  }
+</style>
+</head>
+<body data-app="{{APP_NAME}}">
+<div class="art" aria-hidden="true">
+  <span class="logo"><span class="mark"></span><span>{{APP_NAME}}</span></span>
+  <div>
+    <div class="orb"></div>
+    <h2>Say it once, on video.</h2>
+    <p>Record your screen and camera, then send a link. People watch in their browser, no account needed.</p>
+  </div>
+  <div class="foot">Private to your team</div>
+</div>
+
+<div class="formside">
+  <form id="form" novalidate>
+    <span class="logo mobile-logo"><span class="mark"></span><span>{{APP_NAME}}</span></span>
+    <h1 id="heading">Welcome back</h1>
+    <p class="lead" id="lead">Sign in to record and share videos.</p>
+
+    <label class="field hidden" id="nameField"><span>Your name</span><input class="input" id="name" autocomplete="name" maxlength="80"></label>
+    <label class="field" id="emailField"><span>Email</span><input class="input" id="email" type="email" autocomplete="email"></label>
+    <label class="field" id="pwField"><span>Password</span><input class="input" id="password" type="password" autocomplete="current-password"></label>
+
+    <div class="err hidden" id="err" role="alert"></div>
+    <button class="btn primary block" style="height:46px" id="submit">Sign in</button>
+    <p class="muted hidden" id="foot" style="font-size:13px;margin:0">Forgot your password? Ask your admin to set a new one.</p>
+  </form>
+</div>
+
+<script>
+const MODE = '{{MODE}}';
+const INVITER = '{{INVITER}}';
+const $ = x => document.getElementById(x);
+const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
+let endpoint = '/api/login';
+
+if (MODE === 'setup') {
+  $('heading').textContent = 'Set up your workspace';
+  $('lead').textContent = 'Create the admin account. You can invite your team right after.';
+  show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
+  $('submit').textContent = 'Create account';
+  endpoint = '/api/setup';
+  document.title = document.title.replace('Sign in', 'Set up');
+} else if (MODE === 'invite') {
+  $('heading').textContent = 'Join your team';
+  $('lead').textContent = `${INVITER} invited you. Create your account to start recording.`;
+  show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
+  $('submit').textContent = 'Create account and join';
+  endpoint = '/api' + location.pathname;
+  document.title = document.title.replace('Sign in', 'Join');
+} else if (MODE === 'expired') {
+  $('heading').textContent = 'This invite has expired';
+  $('lead').textContent = 'Invite links work once and last 7 days. Ask your admin for a new one.';
+  ['emailField', 'pwField'].forEach(id => show(id, false));
+  $('submit').textContent = 'Go to sign in';
+  $('form').onsubmit = e => { e.preventDefault(); location.href = '/login'; };
+} else {
+  show('foot');
+}
+
+if (MODE !== 'expired') {
+  ($('nameField').classList.contains('hidden') ? $('email') : $('name')).focus();
+  $('form').addEventListener('submit', async e => {
+    e.preventDefault();
+    show('err', false);
+    const name = $('name').value.trim(), email = $('email').value.trim(), password = $('password').value;
+    const problem = (MODE !== 'login' && !name) ? 'Enter your name.'
+      : !email ? 'Enter your email.'
+      : !password ? 'Enter your password.'
+      : (MODE !== 'login' && password.length < 8) ? 'Use 8 or more characters for your password.' : '';
+    if (problem) { $('err').textContent = problem; show('err'); return; }
+    $('submit').disabled = true;
+    try {
+      const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again.');
+      location.href = '/';
+    } catch (err) {
+      $('err').textContent = err.message; show('err');
+      $('submit').disabled = false;
+    }
+  });
+}
+</script>
+</body>
+</html>

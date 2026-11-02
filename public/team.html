@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team | {{APP_NAME}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .wrap { max-width: 760px; }
+  .invite-box { margin-top: 16px; padding: 16px; border-radius: 14px; background: var(--brand-soft); }
+  .invite-box p { margin: 0 0 10px; font-size: 14px; color: var(--brand-ink); font-weight: 500; }
+  .pending { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .pending .p { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  .pending .p span { flex: 1; }
+  .msg { font-size: 13px; margin-top: 10px; }
+  .msg.bad { color: #D4291A; } .msg.good { color: var(--ok); }
+</style>
+</head>
+<body data-app="{{APP_NAME}}">
+<div class="shell">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="wrap">
+      <div class="page-head"><div><h1 id="pageTitle">Team</h1><div class="sub" id="pageSub">Everyone here can sign in and record. Anyone with a video link can watch.</div></div></div>
+
+      <section class="panel hidden" id="teamPanel">
+        <div class="panel-head">
+          <div><h2>People</h2></div>
+          <button class="btn primary" id="inviteBtn">Invite teammate</button>
+        </div>
+        <div class="people" id="people"></div>
+
+        <div class="invite-box hidden" id="inviteBox">
+          <p>Send this link to your teammate. They choose their own password. It works once and expires in 7 days.</p>
+          <div class="linkbox">
+            <input class="input" id="inviteUrl" readonly aria-label="Invite link">
+            <button class="btn primary" id="copyInvite">Copy</button>
+          </div>
+          <label style="display:inline-flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;color:var(--ink-2);cursor:pointer">
+            <input type="checkbox" id="inviteAdmin" style="accent-color:var(--brand)"> Make them an admin (can invite people and see every video)
+          </label>
+        </div>
+        <div class="pending" id="pending"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><div><h2>Your account</h2><p id="meLine"></p></div></div>
+        <form id="pwForm" class="form-grid">
+          <label class="field"><span>Current password</span><input class="input" id="pCur" type="password" required autocomplete="current-password"></label>
+          <label class="field"><span>New password</span><input class="input" id="pNew" type="password" required minlength="8" autocomplete="new-password" placeholder="8 or more characters"></label>
+          <button class="btn primary">Change password</button>
+        </form>
+        <div class="msg" id="pwMsg"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script src="/static/shell.js"></script>
+<script>
+(async function () {
+  const me = await renderShell('team');
+  $('meLine').textContent = `${me.name}, ${me.email}`;
+  $('inviteBtn').innerHTML = icon('plus') + ' Invite teammate';
+
+  if (me.role !== 'owner') {
+    $('pageTitle').textContent = 'Account';
+    $('pageSub').textContent = 'Manage how you sign in.';
+    document.title = document.title.replace('Team', 'Account');
+  } else {
+    $('teamPanel').classList.remove('hidden');
+    loadPeople(); loadInvites();
+  }
+
+  async function loadPeople() {
+    const users = await api('/api/users');
+    $('people').innerHTML = users.map(u => `
+      <div class="person" data-id="${esc(u.id)}" data-name="${esc(u.name)}">
+        ${avatar(u.name, 'lg')}
+        <div class="info"><div class="nm">${esc(u.name)}${u.id === me.id ? ' <span class="muted" style="font-weight:400">(you)</span>' : ''}</div><div class="em">${esc(u.email)}</div></div>
+        <span class="muted count" style="font-size:13px">${u.videos} ${u.videos === 1 ? 'video' : 'videos'}</span>
+        <span class="pill ${u.role === 'owner' ? 'admin' : ''}">${u.role === 'owner' ? 'Admin' : 'Member'}</span>
+        ${u.id === me.id ? '<span style="width:36px"></span>' : `<div style="position:relative"><button class="btn ghost icon" data-more aria-label="Options for ${esc(u.name)}">${icon('more')}</button></div>`}
+      </div>`).join('');
+  }
+
+  async function loadInvites() {
+    const inv = await api('/api/invites');
+    $('pending').innerHTML = inv.length ? inv.map(i => `
+      <div class="p" data-token="${esc(i.token)}">${icon('link')}
+        <span>Open invite (${i.role === 'owner' ? 'admin' : 'member'}), expires ${new Date(i.expires).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+        <button class="btn ghost sm" data-copy="${esc(i.url)}">Copy</button>
+        <button class="btn ghost sm danger-text" data-revoke>Cancel</button>
+      </div>`).join('') : '';
+  }
+
+  async function makeInvite() {
+    const i = await api('/api/invites', 'POST', { role: $('inviteAdmin').checked ? 'owner' : 'member' });
+    $('inviteUrl').value = i.url;
+    $('inviteBox').classList.remove('hidden');
+    $('inviteUrl').select();
+    loadInvites();
+    return i;
+  }
+  let lastInvite = null;
+  $('inviteBtn').onclick = async () => { lastInvite = await makeInvite(); };
+  $('copyInvite').onclick = () => copyText($('inviteUrl').value, 'Invite link copied');
+  $('inviteAdmin').onchange = async () => {
+    if (lastInvite) await api('/api/invites/' + lastInvite.token, 'DELETE');
+    lastInvite = await makeInvite();
+  };
+  $('pending').addEventListener('click', async e => {
+    const c = e.target.closest('[data-copy]'); if (c) return copyText(c.dataset.copy, 'Invite link copied');
+    const r = e.target.closest('[data-revoke]');
+    if (r) {
+      const token = r.closest('[data-token]').dataset.token;
+      await api('/api/invites/' + token, 'DELETE');
+      if (lastInvite && lastInvite.token === token) { $('inviteBox').classList.add('hidden'); lastInvite = null; }
+      loadInvites(); toast('Invite cancelled');
+    }
+  });
+
+  // Person menu: reset password, remove
+  $('people').addEventListener('click', async e => {
+    const b = e.target.closest('[data-more]'); if (!b) return;
+    e.stopPropagation();
+    document.querySelectorAll('.menu').forEach(m => m.remove());
+    const row = b.closest('.person');
+    const m = document.createElement('div');
+    m.className = 'menu'; m.setAttribute('role', 'menu'); m.style.right = '0'; m.style.top = '40px';
+    m.innerHTML = `<button role="menuitem" data-m="reset">${icon('edit')} Set new password</button>
+      <button role="menuitem" class="danger" data-m="remove">${icon('trash')} Remove from team</button>`;
+    b.parentElement.appendChild(m);
+    m.onclick = async ev => {
+      const it = ev.target.closest('[data-m]'); if (!it) return;
+      m.remove();
+      const name = row.dataset.name;
+      try {
+        if (it.dataset.m === 'reset') {
+          const pw = prompt(`New password for ${name} (8 or more characters). Tell them privately.`);
+          if (!pw) return;
+          await api(`/api/users/${row.dataset.id}/password`, 'POST', { password: pw });
+          toast('Password changed. They have been signed out.');
+        } else {
+          if (!confirm(`Remove ${name}? Their videos move to you and every link keeps working.`)) return;
+          await api('/api/users/' + row.dataset.id, 'DELETE');
+          toast(`${name} removed`); loadPeople();
+        }
+      } catch (err) { alert(err.message); }
+    };
+  });
+  document.addEventListener('click', e => { document.querySelectorAll('.menu').forEach(m => { if (!m.contains(e.target)) m.remove(); }); });
+
+  $('pwForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = $('pwMsg');
+    try {
+      await api('/api/me/password', 'POST', { current: $('pCur').value, next: $('pNew').value });
+      msg.textContent = 'Password changed. Your other devices have been signed out.'; msg.className = 'msg good';
+      e.target.reset();
+    } catch (err) { msg.textContent = err.message; msg.className = 'msg bad'; }
+  });
+})();
+</script>
+</body>
+</html>
