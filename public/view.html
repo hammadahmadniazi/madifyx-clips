@@ -203,7 +203,7 @@
       const m = document.createElement('div');
       m.className = 'menu'; m.setAttribute('role', 'menu');
       m.style.top = '46px'; m.style.right = '0';
-      m.innerHTML = `<a role="menuitem" href="${esc(v.src)}" download>${icon('download')} Download</a>
+      m.innerHTML = `<a role="menuitem" href="${esc(v.src)}?download=1">${icon('download')} Download</a>
         <button role="menuitem" class="danger" id="delVid">${icon('trash')} Delete video</button>`;
       $('moreBtn').parentElement.appendChild(m);
       m.querySelector('#delVid').onclick = async () => {

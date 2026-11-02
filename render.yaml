@@ -1,0 +1,20 @@
+# One-click setup for Render (New > Blueprint). Runs on the free plan.
+# Render's free plan wipes the disk on every restart, so videos and accounts are kept
+# in Cloudflare R2 instead. Render asks you for the four S3_ values when you click Apply.
+services:
+  - type: web
+    name: madifyx-clips
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/config
+    envVars:
+      - key: APP_NAME
+        value: Madifyx Clips
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false

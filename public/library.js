@@ -72,7 +72,7 @@
       m.style.top = '46px'; m.style.right = '8px';
       m.innerHTML = `
         <button role="menuitem" data-m="rename">${icon('edit')} Rename</button>
-        <a role="menuitem" href="${esc(v.src)}" download="${esc(v.title)}">${icon('download')} Download</a>
+        <a role="menuitem" href="${esc(v.src)}?download=1">${icon('download')} Download</a>
         <button role="menuitem" class="danger" data-m="delete">${icon('trash')} Delete</button>`;
       el.appendChild(m); openMenu = m;
       m.querySelector('button').focus();

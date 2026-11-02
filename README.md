@@ -34,7 +34,28 @@ node server.js
 
 Open http://localhost:3000 in Chrome or Edge.
 
-## Put it online with Railway (easiest, no Terminal)
+## Put it online for free (Render + Cloudflare R2)
+
+Render runs the app from this GitHub repo for free. Its free plan wipes the disk on every restart, so videos and accounts are kept in Cloudflare R2 (10 GB free).
+
+**Cloudflare R2 (where videos are kept)**
+1. In the Cloudflare dashboard, open **R2 Object Storage** and turn it on (Cloudflare asks for a card, the free 10 GB isn't charged).
+2. Click **Create bucket**, name it `madifyx-clips`, and create it.
+3. Back on the R2 page, open **API tokens** (Manage R2 API tokens), click **Create API token**, choose **Object Read & Write**, limit it to the `madifyx-clips` bucket, and create it.
+4. Copy the **Access Key ID**, **Secret Access Key** and the **S3 endpoint** (looks like `https://<account id>.r2.cloudflarestorage.com`). The secret is shown only once.
+
+**Render (runs the app)**
+1. Sign in at **render.com** with GitHub.
+2. Click **New**, then **Blueprint**, and pick this repo. Render reads `render.yaml`.
+3. Fill in: `S3_ENDPOINT` (the endpoint), `S3_BUCKET` (`madifyx-clips`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. Click **Apply**.
+4. When it says **Live**, open the service, go to **Settings > Custom Domains**, and add `record.madifyx.com`.
+5. In Cloudflare DNS add a **CNAME** record: name `record`, target `madifyx-clips.onrender.com` (use the address Render shows), cloud **grey (DNS only)**.
+6. Open https://record.madifyx.com and create your admin account right away.
+
+On the free plan the app sleeps after 15 minutes without visitors, and the next visit takes about a minute to wake it. To keep it awake, a free service like cron-job.org can open `https://record.madifyx.com/api/config` every 10 minutes (the free plan's 750 hours a month cover a full month).
+
+## Or use Railway ($5 a month, always on)
+
 
 Railway runs the app straight from this GitHub repo and updates it automatically when the code changes.
 
@@ -53,7 +74,7 @@ Railway runs the app straight from this GitHub repo and updates it automatically
 Browsers only allow screen recording on `https://`, so the included setup gets a free HTTPS certificate automatically.
 
 1. **Get a small server** (Ubuntu, 2 GB RAM is plenty to start). Hetzner, DigitalOcean, Vultr and similar all work.
-2. **Point your subdomain at it.** Where you manage madifyx.com's DNS, add an **A record**: name `clips`, value = your server's IP address.
+2. **Point your subdomain at it.** Where you manage madifyx.com's DNS, add an **A record**: name `record`, value = your server's IP address.
 3. **On the server**, install Docker, copy this folder over, and start it:
 
 ```bash
@@ -76,6 +97,11 @@ To update later: copy the new files over and run the same `docker compose up -d 
 | `SESSION_DAYS` | 30 | How long people stay signed in |
 | `MAX_UPLOAD_MB` | 2048 | Largest upload allowed |
 | `KEEP_ORIGINAL` | 0 | Set to 1 to keep the raw recording after mp4 conversion |
+| `S3_ENDPOINT` | (empty) | Cloud storage address, e.g. your Cloudflare R2 endpoint. When the four S3 settings are set, videos and data are kept there |
+| `S3_BUCKET` | (empty) | Bucket name |
+| `S3_ACCESS_KEY_ID` | (empty) | Storage access key |
+| `S3_SECRET_ACCESS_KEY` | (empty) | Storage secret key |
+| `S3_REGION` | auto | Region (R2 uses `auto`) |
 
 ## Roadmap ideas
 

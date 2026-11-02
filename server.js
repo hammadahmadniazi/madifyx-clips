@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
+const { storage } = require('./storage');
 
 const PORT = process.env.PORT || 3000;
 const APP_NAME = process.env.APP_NAME || 'Madifyx Clips';
@@ -32,7 +33,25 @@ function saveDb() {
     fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
     fs.renameSync(tmp, DB_FILE);
   }, 100);
+  pushDb();
 }
+
+// When cloud storage is on, the database is copied there too, so nothing is lost
+// if the host wipes its disk (Render's free plan does this on every restart).
+let pushTimer = null, pushChain = Promise.resolve();
+function pushDb(delay = 1500) {
+  if (!storage.enabled) return pushChain;
+  clearTimeout(pushTimer);
+  return new Promise(resolve => {
+    pushTimer = setTimeout(() => {
+      pushChain = pushChain
+        .then(() => storage.putBuffer('db.json', Buffer.from(JSON.stringify(db)), 'application/json'))
+        .catch(e => console.error('Could not save database to cloud storage:', e.message))
+        .then(resolve);
+    }, delay);
+  });
+}
+function normalizeDb() { db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; }
 
 function newId() {
   let id;
@@ -85,30 +104,65 @@ function probeDuration(file) {
   return Number.isFinite(n) ? n : null;
 }
 
+// One video at a time keeps memory use low on small servers.
+let queue = Promise.resolve();
+function enqueue(id) { queue = queue.then(() => handleNewVideo(id)).catch(e => console.error(e)); }
+
+const localPath = f => path.join(VIDEO_DIR, f);
+const rmLocal = f => f && fs.rm(localPath(f), () => {});
+
+async function handleNewVideo(id) {
+  const v = db.videos[id];
+  if (!v) return;
+  // 1. Make sure the recording is safe in cloud storage before anything else
+  if (storage.enabled && !v.cloud?.original) {
+    if (!fs.existsSync(localPath(v.original))) return;
+    try {
+      await storage.putFile(v.original, localPath(v.original), v.mime);
+      v.cloud = { ...(v.cloud || {}), original: true }; saveDb();
+    } catch (e) { console.error('Could not copy recording to cloud storage:', e.message); }
+  }
+  // 2. Convert to mp4 and make a thumbnail
+  if (HAS_FFMPEG && v.status === 'processing') await processVideo(id);
+  else if (v.status === 'processing') { v.status = 'ready'; saveDb(); }
+}
+
 async function processVideo(id) {
   const v = db.videos[id];
   if (!v) return;
-  const input = path.join(VIDEO_DIR, v.original);
+  const input = localPath(v.original);
   try {
-    v.status = 'processing'; saveDb();
+    if (!fs.existsSync(input)) {
+      if (!storage.enabled || !v.cloud?.original) throw new Error('Original recording is missing');
+      await storage.getToFile(v.original, input);
+    }
     const mp4 = id + '.mp4';
     // Converting to mp4 makes the video seekable everywhere and play on iPhone/Safari.
-    await runFfmpeg(['-i', input, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26',
+    await runFfmpeg(['-i', input, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-threads', '2',
       '-pix_fmt', 'yuv420p', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', path.join(VIDEO_DIR, mp4)]);
+      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', localPath(mp4)]);
     const thumb = id + '.jpg';
-    await runFfmpeg(['-ss', '1', '-i', path.join(VIDEO_DIR, mp4), '-frames:v', '1', '-vf', 'scale=640:-2', path.join(VIDEO_DIR, thumb)])
-      .catch(() => runFfmpeg(['-i', path.join(VIDEO_DIR, mp4), '-frames:v', '1', '-vf', 'scale=640:-2', path.join(VIDEO_DIR, thumb)]));
-    v.mp4 = mp4;
-    v.thumb = fs.existsSync(path.join(VIDEO_DIR, thumb)) ? thumb : null;
-    v.duration = probeDuration(path.join(VIDEO_DIR, mp4)) || v.duration;
-    v.status = 'ready';
-    if (process.env.KEEP_ORIGINAL !== '1') {
-      fs.rm(input, () => {});
+    await runFfmpeg(['-ss', '1', '-i', localPath(mp4), '-frames:v', '1', '-vf', 'scale=640:-2', localPath(thumb)])
+      .catch(() => runFfmpeg(['-i', localPath(mp4), '-frames:v', '1', '-vf', 'scale=640:-2', localPath(thumb)]));
+    const hasThumb = fs.existsSync(localPath(thumb));
+    const duration = probeDuration(localPath(mp4));
+    if (storage.enabled) {
+      await storage.putFile(mp4, localPath(mp4), 'video/mp4');
+      if (hasThumb) await storage.putFile(thumb, localPath(thumb), 'image/jpeg');
+      v.cloud = { ...(v.cloud || {}), mp4: true, thumb: hasThumb };
     }
+    v.mp4 = mp4;
+    v.thumb = hasThumb ? thumb : null;
+    v.duration = duration || v.duration;
+    v.status = 'ready';
+    if (storage.enabled) { rmLocal(mp4); rmLocal(thumb); }
+    if (process.env.KEEP_ORIGINAL !== '1') {
+      rmLocal(v.original);
+      if (storage.enabled && v.cloud?.original) storage.remove(v.original).then(() => { v.cloud.original = false; saveDb(); }).catch(() => {});
+    } else if (storage.enabled) rmLocal(v.original);
   } catch (e) {
     console.error('Processing failed for', id, e.message);
-    v.status = 'ready'; // the original upload still plays in Chrome/Edge/Firefox
+    v.status = 'ready'; // the original recording still plays in Chrome/Edge/Firefox
   }
   saveDb();
 }
@@ -285,11 +339,11 @@ function handleUpload(req, res, query, user) {
       id, title, original, mime, sizeBytes: bytes, ownerId: user.id,
       createdAt: new Date().toISOString(),
       duration: Number.isFinite(duration) ? duration : null,
-      views: 0, status: HAS_FFMPEG ? 'processing' : 'ready',
+      views: 0, status: HAS_FFMPEG || storage.enabled ? 'processing' : 'ready',
     };
     saveDb();
     json(res, 200, { id, url: `/v/${id}` });
-    if (HAS_FFMPEG) processVideo(id);
+    enqueue(id);
   });
   out.on('error', e => { if (!res.headersSent) json(res, 500, { error: e.message }); });
 }
@@ -304,7 +358,22 @@ const server = http.createServer(async (req, res) => {
     const m = req.method;
     let match;
 
-    if ((m === 'GET' || m === 'HEAD') && p.startsWith('/media/')) return serveFile(req, res, VIDEO_DIR, p.slice(7), 604800);
+    if ((m === 'GET' || m === 'HEAD') && p.startsWith('/media/')) {
+      const file = p.slice(7);
+      const v = db.videos[file.split('.')[0]];
+      if (!v || ![v.original, v.mp4, v.thumb].includes(file)) return send(res, 404, 'Not found');
+      const download = url.searchParams.get('download') === '1'
+        ? (v.title.replace(/[^\w .-]+/g, '').trim() || 'video') + path.extname(file) : null;
+      if (fs.existsSync(localPath(file))) {
+        if (download) res.setHeader('Content-Disposition', `attachment; filename="${download}"`);
+        return serveFile(req, res, VIDEO_DIR, file, 604800);
+      }
+      if (storage.enabled) {
+        res.writeHead(302, { Location: storage.link(file, { download }), 'Cache-Control': 'private, max-age=600' });
+        return res.end();
+      }
+      return send(res, 404, 'Not found');
+    }
     if ((m === 'GET' || m === 'HEAD') && p.startsWith('/static/')) return serveFile(req, res, PUBLIC_DIR, p.slice(8), 3600);
 
     // Share page (public)
@@ -525,7 +594,10 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, publicVideo(v));
       }
       if (m === 'DELETE') {
-        for (const f of [v.original, v.mp4, v.thumb]) if (f) fs.rm(path.join(VIDEO_DIR, f), () => {});
+        for (const f of [v.original, v.mp4, v.thumb]) if (f) {
+          rmLocal(f);
+          if (storage.enabled) storage.remove(f).catch(e => console.error('Could not delete from cloud storage:', e.message));
+        }
         delete db.videos[match[1]];
         saveDb();
         return json(res, 200, { ok: true });
@@ -545,8 +617,36 @@ setInterval(() => {
 }, 3600e3).unref();
 
 server.requestTimeout = 0; // allow long uploads
-server.listen(PORT, () => {
+
+async function start() {
+  if (storage.enabled) {
+    try {
+      const saved = await storage.getBuffer('db.json');
+      if (saved) { db = JSON.parse(saved.toString('utf8')); normalizeDb(); console.log('Loaded data from cloud storage.'); }
+      else console.log('Cloud storage is connected and empty. Starting fresh.');
+    } catch (e) {
+      // Refuse to start rather than overwrite good data with an empty database
+      console.error('Could not read cloud storage. Check the S3_* settings.', e.message);
+      process.exit(1);
+    }
+  }
+  // Pick up videos that were still being processed when the server last stopped
+  for (const v of Object.values(db.videos)) if (v.status === 'processing') enqueue(v.id);
+  listen();
+}
+
+// Save the database before the host shuts the app down
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, async () => {
+    if (storage.enabled) await pushDb(0);
+    process.exit(0);
+  });
+}
+
+start();
+function listen() { server.listen(PORT, () => {
   console.log(`${APP_NAME} running at http://localhost:${PORT}`);
   console.log(HAS_FFMPEG ? 'ffmpeg found: videos will be converted to mp4 with thumbnails.' : 'ffmpeg not found: videos are kept as recorded (install ffmpeg for mp4 + thumbnails).');
+  console.log(storage.enabled ? 'Videos and data are saved to cloud storage.' : 'Videos and data are saved on this computer in ' + DATA_DIR);
   if (!hasUsers()) console.log(`First time? Open http://localhost:${PORT} to create your owner account.`);
-});
+}); }
