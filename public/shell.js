@@ -79,28 +79,52 @@ async function copyText(text, msg = 'Link copied') {
   catch { prompt('Copy this link:', text); }
 }
 
-// Sidebar for signed-in pages. `active` is 'library' or 'team'.
+// Loom-style frame for signed-in pages: slim icon rail, top bar with search and avatar menu.
+// `active` is 'library' or 'team'.
 function renderShell(active) {
-  const side = $('side');
   const onApp = location.pathname === '/';
-  side.innerHTML = `
-    <a class="logo" href="/" aria-label="${esc(document.body.dataset.app || 'Madifyx Clips')} home"><img src="/static/brand/logo.png" alt=""><span class="wm"><b>MADIFYX</b><small>CLIPS</small></span></a>
-    <button class="btn dark new" id="newVideo"><span class="dot"></span> New video</button>
-    <nav aria-label="Main">
-      <a href="/" class="${active === 'library' ? 'active' : ''}">${icon('library')}<span>Library</span></a>
-      <a href="/team" class="${active === 'team' ? 'active' : ''}" id="teamLink">${icon('team')}<span>Team</span></a>
-    </nav>
-    <div class="me" id="me"></div>`;
-  $('newVideo').onclick = () => {
-    if (onApp && window.openRecorder) window.openRecorder();
-    else location.href = '/?record=1';
-  };
+  const record = () => { if (onApp && window.openRecorder) window.openRecorder(); else location.href = '/?record=1'; };
+  $('side').innerHTML = `
+    <a class="rail-logo" href="/" aria-label="Madifyx Clips home"><img src="/static/brand/logo.png" alt=""></a>
+    <nav class="rail-nav" aria-label="Main">
+      <a href="/" class="${active === 'library' ? 'active' : ''}" data-tip="Library">${icon('library')}<span>Library</span></a>
+      <button class="rail-rec" id="newVideo" data-tip="New video" aria-label="New video">${icon('camera')}</button>
+      <a href="/team" class="${active === 'team' ? 'active' : ''}" data-tip="Team" id="teamLink">${icon('team')}<span>Team</span></a>
+    </nav>`;
+  const main = document.querySelector('.main');
+  main.insertAdjacentHTML('afterbegin', `
+    <header class="appbar">
+      <a class="top-logo" href="/" aria-label="Madifyx Clips home"><img src="/static/brand/logo.png" alt=""></a>
+      <label class="tsearch"><span class="hidden">Search</span>${icon('search')}
+        <input id="search" type="search" placeholder="Search videos and people" autocomplete="off"></label>
+      <div class="tright">
+        <button class="btn primary newv" id="newVideo2"><span class="dot"></span><span>New video</span></button>
+        <div class="avwrap"><button class="avbtn" id="avBtn" aria-haspopup="menu" aria-label="Your account"></button></div>
+      </div>
+    </header>`);
+  $('newVideo').onclick = record;
+  $('newVideo2').onclick = record;
+  if (!onApp) $('search').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.value.trim()) location.href = '/?q=' + encodeURIComponent(e.target.value.trim()); });
+  const q = new URLSearchParams(location.search).get('q');
+  if (q && onApp) $('search').value = q;
+
   window.meReady = api('/api/me').then(me => {
     window.ME = me;
-    $('teamLink').querySelector('span').textContent = me.role === 'owner' ? 'Team' : 'Account';
-    $('me').innerHTML = `${avatar(me.name)}<div class="who"><div class="nm"></div><div class="rl">${me.role === 'owner' ? 'Admin' : 'Member'}</div></div>
-      <a class="btn ghost icon sm" href="/logout" title="Sign out" aria-label="Sign out">${icon('logout')}</a>`;
-    $('me').querySelector('.nm').textContent = me.name;
+    const label = me.role === 'owner' ? 'Team' : 'Account';
+    $('teamLink').dataset.tip = label; $('teamLink').querySelector('span').textContent = label;
+    $('avBtn').innerHTML = avatar(me.name);
+    $('avBtn').onclick = e => {
+      e.stopPropagation();
+      const old = document.querySelector('.avmenu'); if (old) { old.remove(); return; }
+      const m = document.createElement('div');
+      m.className = 'menu avmenu'; m.setAttribute('role', 'menu');
+      m.innerHTML = `<div class="avhead">${avatar(me.name, 'lg')}<div><div class="nm"></div><div class="em"></div></div></div>
+        <a role="menuitem" href="/team">${icon('team')} ${me.role === 'owner' ? 'Team and settings' : 'Account settings'}</a>
+        <a role="menuitem" href="/logout">${icon('logout')} Sign out</a>`;
+      m.querySelector('.nm').textContent = me.name; m.querySelector('.em').textContent = me.email;
+      $('avBtn').parentElement.appendChild(m);
+    };
+    document.addEventListener('click', e => { const m = document.querySelector('.avmenu'); if (m && !m.contains(e.target)) m.remove(); });
     return me;
   });
   return window.meReady;

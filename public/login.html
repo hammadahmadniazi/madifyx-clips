@@ -97,15 +97,15 @@ if (MODE === 'setup') {
   endpoint = '/api/setup';
   document.title = document.title.replace('Sign in', 'Set up');
 } else if (MODE === 'invite') {
-  $('heading').textContent = 'Join your team';
-  $('lead').textContent = `${INVITER} invited you. Create your account to start recording.`;
+  $('heading').textContent = 'Join Madifyx Clips';
+  $('lead').textContent = "You've been invited to Madifyx Clips. Create your account to start recording.";
   show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
   $('submit').textContent = 'Create account and join';
   endpoint = '/api' + location.pathname;
   document.title = document.title.replace('Sign in', 'Join');
 } else if (MODE === 'signup') {
   $('heading').textContent = 'Create your account';
-  $('lead').textContent = `Join ${INVITER}'s team on Madifyx Clips and start recording.`;
+  $('lead').textContent = 'Join the Madifyx team and start recording.';
   show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
   $('submit').textContent = 'Create account';
   endpoint = '/api/signup';

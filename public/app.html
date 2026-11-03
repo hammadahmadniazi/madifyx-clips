@@ -16,24 +16,13 @@
   <aside class="side" id="side"></aside>
 
   <main class="main">
-    <div class="page-head">
-      <div>
-        <h1 id="libTitle">Your library</h1>
-        <div class="sub" id="count">&nbsp;</div>
-      </div>
-      <div class="lib-tools">
-        <div class="seg hidden" id="scope" role="group" aria-label="Whose videos">
-          <button data-scope="mine" aria-pressed="true">Mine</button>
-          <button data-scope="all" aria-pressed="false">Whole team</button>
-        </div>
-        <label class="search"><span class="hidden">Search</span>
-          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
-          <input class="input" id="search" type="search" placeholder="Search videos">
-        </label>
-      </div>
+    <div class="page-head lib-head">
+      <h1 id="libTitle">My library</h1>
     </div>
-
-    <div class="stats hidden" id="stats" aria-label="Library summary"></div>
+    <div class="tabs" id="scope" role="tablist" aria-label="Whose videos">
+      <button role="tab" data-scope="mine" aria-pressed="true">Videos <span class="tcount" id="count"></span></button>
+      <button role="tab" data-scope="all" aria-pressed="false" class="hidden" id="teamTab">Team videos</button>
+    </div>
 
     <div class="empty hidden" id="empty">
       <div class="bigdot"></div>

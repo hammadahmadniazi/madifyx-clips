@@ -5,7 +5,7 @@
   let pollTimer;
 
   renderShell('library').then(me => {
-    if (me.role === 'owner') $('scope').classList.remove('hidden');
+    if (me.role === 'owner') $('teamTab').classList.remove('hidden');
   });
 
   function card(v) {
@@ -27,7 +27,7 @@
         <a class="t" href="/v/${esc(v.id)}">${esc(v.title)}</a>
         <div class="meta">
           ${avatar(v.owner, 'sm')}
-          <span>${scope === 'all' && v.owner ? esc(v.owner.split(' ')[0]) + ', ' : ''}${ago(v.createdAt)}</span>
+          <span class="by">${esc((v.owner || '').split(' ')[0])}</span><span>${ago(v.createdAt)}</span>
           <span class="stat-i" title="Views">${icon('eye')}${v.views}</span>
           ${v.commentCount ? `<span class="stat-i" title="Comments">${icon('chat')}${v.commentCount}</span>` : ''}
         </div>
@@ -37,12 +37,11 @@
   function render() {
     const q = $('search').value.trim().toLowerCase();
     const list = videos.filter(v => !q || v.title.toLowerCase().includes(q) || (v.owner || '').toLowerCase().includes(q));
-    $('libTitle').textContent = scope === 'all' ? 'Team library' : 'Your library';
-    $('count').textContent = videos.length ? `${videos.length} ${videos.length === 1 ? 'video' : 'videos'}` : ' ';
+    $('libTitle').textContent = scope === 'all' ? 'Team library' : 'My library';
+    $('count').textContent = videos.length || '';
     $('empty').classList.toggle('hidden', videos.length > 0);
     $('noMatch').classList.toggle('hidden', !(videos.length && !list.length));
     $('grid').innerHTML = list.map(card).join('');
-    renderStats();
   }
 
   function renderStats() {
@@ -125,6 +124,7 @@
     load();
   });
   $('search').addEventListener('input', render);
+  $('search').addEventListener('search', render);
   $('emptyRecord').onclick = () => window.openRecorder && window.openRecorder();
 
   load();
