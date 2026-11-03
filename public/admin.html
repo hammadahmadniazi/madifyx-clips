@@ -68,7 +68,7 @@
         <p class="muted" id="groupHelp" style="font-size:13.5px;margin:0 0 12px"></p>
         <div class="tscroll">
           <table class="table">
-            <thead><tr><th>Person</th><th>Workspace</th><th id="colStatus">Access</th><th class="hide-sm">Videos</th><th class="hide-sm">Joined</th><th>Free access</th></tr></thead>
+            <thead><tr><th>Person</th><th>Workspace</th><th id="colStatus">Access</th><th class="hide-sm">Videos</th><th class="hide-sm">Joined</th><th>Free access</th><th></th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
         </div>
@@ -129,7 +129,8 @@
       <td class="hide-sm num">${u.videos}</td>
       <td class="hide-sm"><span class="sub" style="font-size:13px">${new Date(u.joined).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></td>
       <td><label class="switch"><input type="checkbox" data-comp ${u.group === 'team' ? 'checked' : ''} ${u.workspace.home ? 'disabled' : ''} aria-label="Free access for ${esc(u.name)}"><span></span></label></td>
-    </tr>`).join('') || `<tr><td colspan="6" class="muted">${group === 'free' && only ? 'Nobody has reached the limit yet.' : 'Nobody here yet.'}</td></tr>`;
+      <td>${u.id === window.ME.id ? '' : `<button class="btn sm" data-viewas="${esc(u.id)}" title="See the app exactly as ${esc(u.name)} sees it">${icon('eye')} View as</button>`}</td>
+    </tr>`).join('') || `<tr><td colspan="7" class="muted">${group === 'free' && only ? 'Nobody has reached the limit yet.' : 'Nobody here yet.'}</td></tr>`;
     const atLimit = people.filter(u => u.atLimit).length;
     const payingWs = new Set(people.filter(u => u.group === 'paid').map(u => u.workspace.id)).size;
     const ppl = n => n + (n === 1 ? ' person' : ' people');
@@ -148,6 +149,13 @@
     group = b.dataset.g;
     $('groupTabs').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
     render();
+  });
+  $('rows').addEventListener('click', async e => {
+    const b = e.target.closest('[data-viewas]'); if (!b) return;
+    const u = people.find(x => x.id === b.dataset.viewas);
+    if (!confirm(`View the app as ${u.name}?\n\nYou'll see exactly what they see, but you can't change anything. Use "Return to my account" to come back. This is logged.`)) return;
+    try { await api('/api/admin/view-as/' + u.id, 'POST', {}); location.href = '/'; }
+    catch (err) { alert(err.message); }
   });
   $('rows').addEventListener('change', async e => {
     const cb = e.target.closest('[data-comp]'); if (!cb) return;

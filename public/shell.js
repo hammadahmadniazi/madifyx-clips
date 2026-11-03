@@ -120,6 +120,7 @@ function renderShell(active) {
     const label = me.role === 'owner' ? 'Team' : 'Account';
     $('teamLink').dataset.tip = label; $('teamLink').querySelector('span').textContent = label;
     if (me.isAdmin) $('adminLink').classList.remove('hidden');
+    if (me.viewAs) viewAsBanner(me);
     if (me.workspace.plan === 'free') { $('upgradeTop').classList.remove('hidden'); $('upgradeTop').onclick = () => showUpgrade(); }
     $('avBtn').innerHTML = avatar(me.name);
     $('avBtn').onclick = e => {
@@ -182,4 +183,20 @@ async function showUpgrade(reason) {
   const msg = d.querySelector('.up-msg');
   const go = d.querySelector('.up-go'); if (go) go.onclick = () => startCheckout(go, t => { msg.textContent = t; msg.classList.remove('hidden'); });
   d.showModal();
+}
+
+// ---------- "view as" banner (platform admin support mode) ----------
+function viewAsBanner(me) {
+  document.body.classList.add('viewing-as');
+  const b = document.createElement('div');
+  b.className = 'viewas'; b.setAttribute('role', 'status');
+  b.innerHTML = `${icon('eye')}<span>Viewing as <b></b><small>Look only, nothing can be changed</small></span><button class="btn sm primary">Return to my account</button>`;
+  b.querySelector('b').textContent = `${me.name} (${me.email})`;
+  b.querySelector('button').onclick = async () => {
+    await fetch('/api/view-as/stop', { method: 'POST' });
+    location.href = '/admin';
+  };
+  document.body.appendChild(b);
+  // End automatically when the hour is up
+  setTimeout(() => { location.href = '/logout'; }, Math.max(0, me.viewAs.until - Date.now()) + 1000);
 }

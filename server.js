@@ -315,6 +315,36 @@ function currentUser(req) {
   if (s.expires < Date.now()) { delete db.sessions[token]; saveDb(); return null; }
   return db.users[s.userId] || null;
 }
+// The session behind this request (used for "view as" support mode)
+function sessionOf(req) {
+  const token = parseCookies(req).sid;
+  const s = token && db.sessions[token];
+  return s ? { token, s } : null;
+}
+function setSid(req, res, token, persistent) {
+  const flags = ['Path=/', 'HttpOnly', 'SameSite=Lax'];
+  if (persistent) flags.push(`Max-Age=${SESSION_DAYS * 86400}`);
+  if (isHttps(req)) flags.push('Secure');
+  res.setHeader('Set-Cookie', `sid=${token}; ${flags.join('; ')}`);
+}
+// "View as": the platform admin sees the app as another person, look only, for up to an hour
+const VIEW_AS_MINUTES = 60;
+function startViewAs(req, res, admin, target) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  db.sessions[token] = { userId: target.id, expires: Date.now() + VIEW_AS_MINUTES * 60e3, impersonator: admin.id, returnTo: parseCookies(req).sid };
+  (db.settings.audit ||= []).push({ at: new Date().toISOString(), admin: admin.email, viewed: target.email, action: 'view as' });
+  db.settings.audit = db.settings.audit.slice(-500);
+  saveDb();
+  console.log(`[audit] ${admin.email} is viewing as ${target.email}`);
+  setSid(req, res, token, false);
+}
+function endViewAs(req, res, sess) {
+  delete db.sessions[sess.token];
+  const back = sess.s.returnTo && db.sessions[sess.s.returnTo];
+  if (back && back.expires > Date.now()) setSid(req, res, sess.s.returnTo, true);
+  else res.setHeader('Set-Cookie', 'sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+  saveDb();
+}
 function clearSession(req, res) {
   const token = parseCookies(req).sid;
   if (token) { delete db.sessions[token]; saveDb(); }
@@ -502,6 +532,16 @@ const server = http.createServer(async (req, res) => {
       catch (e) { console.error('Stripe webhook rejected:', e.message); return json(res, 400, { error: e.message }); }
       try { await handleStripeEvent(event); } catch (e) { console.error('Stripe webhook failed:', e.message); return json(res, 500, { error: 'Failed' }); }
       return json(res, 200, { received: true });
+    }
+
+    // ---------- "view as" mode is look only ----------
+    const viewAs = sessionOf(req);
+    if (viewAs && viewAs.s.impersonator) {
+      if (p === '/api/view-as/stop' || p === '/logout' || viewAs.s.expires < Date.now()) {
+        endViewAs(req, res, viewAs);
+        return p.startsWith('/api/') && m === 'POST' ? json(res, 200, { ok: true }) : redirect(res, '/admin');
+      }
+      if (m !== 'GET' && m !== 'HEAD') return json(res, 403, { error: "You're viewing as someone else, so changes are turned off. Return to your account to make changes.", viewAs: true });
     }
 
     if ((m === 'GET' || m === 'HEAD') && p.startsWith('/media/')) {
@@ -744,7 +784,9 @@ const server = http.createServer(async (req, res) => {
     if (m === 'GET' && p === '/admin') return isPlatformAdmin(user) ? send(res, 200, page('admin.html'), MIME['.html']) : redirect(res, '/');
     if (m === 'GET' && (p === '/library' || p === '/account' || p === '/record')) return redirect(res, p === '/account' ? '/team' : p === '/record' ? '/?record=1' : '/');
     if (m === 'GET' && p === '/api/me') {
+      const va = viewAs && viewAs.s.impersonator ? db.users[viewAs.s.impersonator] : null;
       return json(res, 200, { ...publicUser(user), workspace: workspaceInfo(wsOf(user)), isAdmin: isPlatformAdmin(user),
+        viewAs: va ? { by: va.name, until: viewAs.s.expires } : null,
         billing: { ready: billing.billingReady(), price: await billing.priceLabel() } });
     }
     if (m === 'PATCH' && p === '/api/workspace') {
@@ -812,6 +854,14 @@ const server = http.createServer(async (req, res) => {
         });
         return json(res, 200, list);
       }
+      if (m === 'POST' && (match = /^\/api\/admin\/view-as\/([\w-]+)$/.exec(p))) {
+        const target = db.users[match[1]];
+        if (!target) return json(res, 404, { error: 'Not found' });
+        if (target.id === user.id) return json(res, 400, { error: "That's you." });
+        startViewAs(req, res, user, target);
+        return json(res, 200, { ok: true });
+      }
+      if (m === 'GET' && p === '/api/admin/audit') return json(res, 200, (db.settings.audit || []).slice(-100).reverse());
       // Every person, grouped: team and free forever, free plan, paid
       if (m === 'GET' && p === '/api/admin/users') {
         const vidsByWs = {}, vidsByUser = {};

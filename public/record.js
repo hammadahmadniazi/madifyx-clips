@@ -104,6 +104,7 @@
     // Plan limits: check before recording so nobody loses a take
     let me;
     try { me = await api('/api/me'); window.ME = me; } catch (e) { return; }
+    if (me.viewAs) { alert(`You're viewing as ${me.name}. Recording is turned off in this mode.`); return; }
     const lim = me.workspace.limits;
     if (lim.maxVideos !== null && me.workspace.usage.videos >= lim.maxVideos) {
       showUpgrade(`You've used all ${lim.maxVideos} free videos`);
