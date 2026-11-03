@@ -6,7 +6,9 @@
 <title>Library | {{APP_NAME}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="/static/brand/logo.png">
+<meta name="theme-color" content="#07080D">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body data-app="{{APP_NAME}}">
@@ -30,6 +32,8 @@
         </label>
       </div>
     </div>
+
+    <div class="stats hidden" id="stats" aria-label="Library summary"></div>
 
     <div class="empty hidden" id="empty">
       <div class="bigdot"></div>

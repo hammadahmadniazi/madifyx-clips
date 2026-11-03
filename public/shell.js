@@ -1,5 +1,7 @@
 // Shared helpers: icons, sidebar, toasts, small utilities.
 const ICONS = {
+  film: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7.5 4.5v15M16.5 4.5v15M3 9.5h4.5M3 14.5h4.5M16.5 9.5H21M16.5 14.5H21"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   library: '<rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M10.2 9.4v5.2l4.3-2.6z"/>',
   team: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.6-3 2.9-4.7 5.5-4.7s4.9 1.7 5.5 4.7"/><circle cx="17" cy="9.5" r="2.4"/><path d="M16.4 14.4c2.2.1 3.7 1.5 4.1 4"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
@@ -42,7 +44,7 @@ function ago(iso) {
   if (s < 86400 * 7) { const d = Math.floor(s / 86400); return d === 1 ? 'yesterday' : d + ' days ago'; }
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
 }
-const AVATAR_COLORS = ['#3446FF', '#0E9F6E', '#D9480F', '#7C3AED', '#0B7285', '#C2255C', '#5C6AC4'];
+const AVATAR_COLORS = ['linear-gradient(135deg,#00C3FF,#0077B6)', 'linear-gradient(135deg,#00C8D7,#00897B)', 'linear-gradient(135deg,#8B7CFF,#5B3FD6)', 'linear-gradient(135deg,#FFB547,#E07A12)', 'linear-gradient(135deg,#FF6B8A,#C2255C)', 'linear-gradient(135deg,#4ADE80,#15803D)', 'linear-gradient(135deg,#60A5FA,#2563EB)'];
 function avatar(name, size = '') {
   name = String(name || '?').trim();
   let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -82,7 +84,7 @@ function renderShell(active) {
   const side = $('side');
   const onApp = location.pathname === '/';
   side.innerHTML = `
-    <a class="logo" href="/"><span class="mark"></span><span>${esc(document.body.dataset.app || 'Clips')}</span></a>
+    <a class="logo" href="/" aria-label="${esc(document.body.dataset.app || 'Madifyx Clips')} home"><img src="/static/brand/logo.png" alt=""><span class="wm"><b>MADIFYX</b><small>CLIPS</small></span></a>
     <button class="btn dark new" id="newVideo"><span class="dot"></span> New video</button>
     <nav aria-label="Main">
       <a href="/" class="${active === 'library' ? 'active' : ''}">${icon('library')}<span>Library</span></a>

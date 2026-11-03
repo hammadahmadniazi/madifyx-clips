@@ -16,6 +16,7 @@
       <article class="vid" data-id="${esc(v.id)}">
         <a class="thumb" href="/v/${esc(v.id)}" aria-label="${esc(v.title)}">
           ${thumb}
+          <span class="play">${icon('play')}</span>
           ${v.duration ? `<span class="dur">${fmtDur(v.duration)}</span>` : ''}
           ${v.status === 'processing' ? '<span class="proc">Processing</span>' : ''}
         </a>
@@ -27,8 +28,8 @@
         <div class="meta">
           ${avatar(v.owner, 'sm')}
           <span>${scope === 'all' && v.owner ? esc(v.owner.split(' ')[0]) + ', ' : ''}${ago(v.createdAt)}</span>
-          <span class="stat" title="Views">${icon('eye')}${v.views}</span>
-          ${v.commentCount ? `<span class="stat" style="margin-left:0" title="Comments">${icon('chat')}${v.commentCount}</span>` : ''}
+          <span class="stat-i" title="Views">${icon('eye')}${v.views}</span>
+          ${v.commentCount ? `<span class="stat-i" title="Comments">${icon('chat')}${v.commentCount}</span>` : ''}
         </div>
       </article>`;
   }
@@ -41,6 +42,23 @@
     $('empty').classList.toggle('hidden', videos.length > 0);
     $('noMatch').classList.toggle('hidden', !(videos.length && !list.length));
     $('grid').innerHTML = list.map(card).join('');
+    renderStats();
+  }
+
+  function renderStats() {
+    $('stats').classList.toggle('hidden', !videos.length);
+    if (!videos.length) return;
+    const views = videos.reduce((n, v) => n + (v.views || 0), 0);
+    const comments = videos.reduce((n, v) => n + (v.commentCount || 0), 0);
+    const secs = videos.reduce((n, v) => n + (v.duration || 0), 0);
+    const recorded = secs >= 3600 ? (secs / 3600).toFixed(1) + 'h' : fmtDur(secs);
+    const tiles = [
+      ['film', 'Videos', videos.length],
+      ['eye', 'Views', views],
+      ['chat', 'Comments', comments],
+      ['clock', 'Recorded', recorded],
+    ];
+    $('stats').innerHTML = tiles.map(([ic, k, val]) => `<div class="stat"><div class="k">${icon(ic)}${k}</div><div class="v">${val}</div></div>`).join('');
   }
 
   async function load() {

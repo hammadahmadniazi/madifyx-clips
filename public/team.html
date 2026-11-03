@@ -6,11 +6,13 @@
 <title>Team | {{APP_NAME}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="/static/brand/logo.png">
+<meta name="theme-color" content="#07080D">
 <link rel="stylesheet" href="/static/style.css">
 <style>
   .wrap { max-width: 760px; }
-  .invite-box { margin-top: 16px; padding: 16px; border-radius: 14px; background: var(--brand-soft); }
+  .invite-box { margin-top: 16px; padding: 16px; border-radius: 15px; background: rgba(0, 195, 255, .06); border: 1px solid rgba(0, 195, 255, .25); }
   .invite-box p { margin: 0 0 10px; font-size: 14px; color: var(--brand-ink); font-weight: 500; }
   .pending { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
   .pending .p { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
@@ -18,12 +20,12 @@
   .msg { font-size: 13px; margin-top: 10px; }
   .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
   .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-  .switch span { width: 42px; height: 24px; border-radius: 999px; background: #D5D8DF; position: relative; transition: background .15s; }
-  .switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
-  .switch input:checked + span { background: var(--brand); }
+  .switch span { width: 44px; height: 26px; border-radius: 999px; background: rgba(255,255,255,.12); position: relative; transition: background .15s, box-shadow .2s; }
+  .switch span::after { content: ''; position: absolute; left: 4px; top: 4px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
+  .switch input:checked + span { background: var(--brand); box-shadow: 0 0 16px -2px var(--brand-glow); }
   .switch input:checked + span::after { transform: translateX(18px); }
   .switch input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
-  .msg.bad { color: #D4291A; } .msg.good { color: var(--ok); }
+  .msg.bad { color: #FF7A86; } .msg.good { color: var(--ok); }
 </style>
 </head>
 <body data-app="{{APP_NAME}}">

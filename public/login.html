@@ -6,47 +6,59 @@
 <title>Sign in | {{APP_NAME}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="/static/brand/logo.png">
+<meta name="theme-color" content="#07080D">
 <link rel="stylesheet" href="/static/style.css">
 <style>
-  body { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .art { background: var(--ink); color: #fff; padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
-  .art .logo .mark { background: #fff; }
-  .art .logo .mark::before { background: var(--ink); }
-  .art h2 { font-size: clamp(30px, 3.4vw, 44px); line-height: 1.08; max-width: 12ch; position: relative; z-index: 1; }
-  .art p { color: #A9AEBB; max-width: 34ch; margin: 14px 0 0; position: relative; z-index: 1; }
-  .orb { position: absolute; right: -90px; top: 22%; width: 360px; height: 360px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .08); }
-  .orb::before { content: ''; position: absolute; inset: 60px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .1); }
-  .orb::after { content: ''; position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; margin: -46px; border-radius: 50%; background: var(--rec); box-shadow: 0 0 0 14px rgba(255, 75, 58, .18), 0 0 80px rgba(255, 75, 58, .45); }
-  .art .foot { font-size: 13px; color: #6F7584; position: relative; z-index: 1; }
-  .formside { display: flex; align-items: center; justify-content: center; padding: 40px 24px; background: var(--surface); }
-  form { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
-  form h1 { font-size: 30px; }
+  body { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  .art { position: relative; overflow: hidden; padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; border-right: 1px solid var(--line);
+    background: radial-gradient(620px 420px at 62% 44%, rgba(0, 195, 255, .16), transparent 70%), linear-gradient(180deg, #0B0D16, #07080D); }
+  .art h2 { font-size: clamp(32px, 3.6vw, 50px); line-height: 1.04; letter-spacing: -0.035em; max-width: 12ch; position: relative; z-index: 1; }
+  .art h2 span { background: linear-gradient(90deg, #5AD8FF, var(--brand) 50%, var(--brand-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .art p { color: var(--ink-2); max-width: 36ch; margin: 16px 0 0; position: relative; z-index: 1; font-size: 16px; }
+  /* The Madifyx mark in orbit */
+  .orbit { position: absolute; right: -60px; top: 16%; width: 420px; height: 420px; pointer-events: none; }
+  .orbit .r { position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(0, 195, 255, .14); }
+  .orbit .r2 { inset: 70px; border-color: rgba(0, 195, 255, .2); }
+  .orbit .r3 { inset: 140px; border-color: rgba(0, 195, 255, .1); background: radial-gradient(circle, rgba(0, 195, 255, .14), transparent 70%); }
+  .orbit img { position: absolute; left: 50%; top: 50%; width: 112px; height: 112px; margin: -56px; border-radius: 28px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1), 0 0 80px rgba(0, 200, 215, .45), 0 30px 60px rgba(0, 0, 0, .6); }
+  .orbit .sat { position: absolute; inset: 70px; animation: orbit 14s linear infinite; }
+  .orbit .sat::after { content: ''; position: absolute; left: 50%; top: -6px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--brand-2); box-shadow: 0 0 18px var(--brand-2); }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  .art .foot { font-size: 13px; color: var(--muted); position: relative; z-index: 1; display: flex; gap: 18px; }
+  .art .foot span { display: inline-flex; align-items: center; gap: 7px; }
+  .art .foot span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 10px var(--brand); }
+  .formside { display: flex; align-items: center; justify-content: center; padding: 40px 24px; }
+  form { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 16px; padding: 30px; border-radius: 22px; border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(21, 24, 38, .75), rgba(13, 15, 23, .75)); box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255, 255, 255, .05); backdrop-filter: blur(16px); }
+  form h1 { font-size: 28px; }
   form .lead { color: var(--muted); margin: -8px 0 6px; }
-  .err { color: #D4291A; font-size: 14px; min-height: 0; }
+  .err { color: #FF7A86; font-size: 14px; }
   .mobile-logo { display: none; }
-  @media (max-width: 860px) {
+  @media (max-width: 900px) {
     body { grid-template-columns: 1fr; }
     .art { display: none; }
-    .formside { align-items: flex-start; padding-top: 12vh; }
-    .mobile-logo { display: inline-flex; margin-bottom: 18px; }
+    .formside { flex-direction: column; justify-content: flex-start; padding-top: 9vh; }
+    .mobile-logo { display: inline-flex; margin-bottom: 4px; }
+    form { padding: 24px 20px; }
   }
 </style>
 </head>
 <body data-app="{{APP_NAME}}">
 <div class="art" aria-hidden="true">
-  <span class="logo"><span class="mark"></span><span>{{APP_NAME}}</span></span>
+  <span class="logo"><img src="/static/brand/logo.png" alt=""><span class="wm"><b>MADIFYX</b><small>CLIPS</small></span></span>
   <div>
-    <div class="orb"></div>
-    <h2>Say it once, on video.</h2>
+    <div class="orbit"><div class="r"></div><div class="r r2"></div><div class="r r3"></div><div class="sat"></div><img src="/static/brand/logo.png" alt=""></div>
+    <h2>Say it once, <span>on video.</span></h2>
     <p>Record your screen and camera, then send a link. People watch in their browser, no account needed.</p>
   </div>
-  <div class="foot">Private to your team</div>
+  <div class="foot"><span>Private to your team</span><span>Links anyone can watch</span></div>
 </div>
 
 <div class="formside">
   <form id="form" novalidate>
-    <span class="logo mobile-logo"><span class="mark"></span><span>{{APP_NAME}}</span></span>
+    <span class="logo mobile-logo"><img src="/static/brand/logo.png" alt=""><span class="wm"><b>MADIFYX</b><small>CLIPS</small></span></span>
     <h1 id="heading">Welcome back</h1>
     <p class="lead" id="lead">Sign in to record and share videos.</p>
 
