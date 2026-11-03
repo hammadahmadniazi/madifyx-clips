@@ -550,6 +550,14 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { views: v.views });
     }
     if (m === 'GET' && p === '/api/config') return json(res, 200, { appName: APP_NAME, ffmpeg: HAS_FFMPEG });
+    // Terms of Service and Privacy Policy (public)
+    if (m === 'GET' && (p === '/terms' || p === '/privacy')) {
+      return send(res, 200, page(p.slice(1) + '.html', {
+        SUPPORT_EMAIL: escapeHtml(process.env.SUPPORT_EMAIL || OWNER_EMAIL || 'support@madifyx.com'),
+        JURISDICTION: escapeHtml(process.env.LEGAL_JURISDICTION || 'the State of New York, United States'),
+        UPDATED: 'November 3, 2026',
+      }), MIME['.html']);
+    }
     // Plans shown on the public homepage
     if (m === 'GET' && p === '/api/pricing') {
       return json(res, 200, { price: await billing.priceLabel(), signupOpen: signupOpen(),

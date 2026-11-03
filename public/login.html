@@ -40,6 +40,10 @@
   .switchline a:hover { text-decoration: underline; }
   .input.code { height: 58px; text-align: center; font: 600 28px var(--mono); letter-spacing: .4em; padding-left: .4em; }
   .lead b { color: var(--ink); font-weight: 600; }
+  .agree { margin: -4px 0 0; font-size: 12.5px; color: var(--muted); text-align: center; line-height: 1.5; }
+  .agree a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+  .legal-links { position: absolute; bottom: 18px; right: 24px; font-size: 12.5px; color: var(--muted); display: flex; gap: 14px; }
+  .legal-links a:hover { color: #fff; }
   .mobile-logo { display: none; }
   @media (max-width: 900px) {
     body { grid-template-columns: 1fr; }
@@ -61,7 +65,8 @@
   <div class="foot"><span>Private to your team</span><span>Links anyone can watch</span></div>
 </div>
 
-<div class="formside">
+<div class="formside" style="position:relative">
+  <div class="legal-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></div>
   <form id="form" novalidate>
     <span class="logo mobile-logo"><img src="/static/brand/logo.png" alt=""><span class="wm"><b>MADIFYX</b><small>CLIPS</small></span></span>
     <h1 id="heading">Welcome back</h1>
@@ -76,6 +81,7 @@
     <button class="btn primary block" style="height:46px" id="submit">Sign in</button>
     <p class="muted hidden" id="foot" style="font-size:13px;margin:0">Forgot your password? Ask your admin to set a new one.</p>
     <p class="switchline hidden" id="toSignup">New here? <a href="/signup">Create a free account</a></p>
+    <p class="agree hidden" id="agree">By creating an account, you agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>.</p>
     <p class="switchline hidden" id="resendLine">No email? Check spam, or <a href="#" id="resend">send a new code</a></p>
     <p class="switchline hidden" id="toLogin">Already have an account? <a href="/login">Sign in</a></p>
   </form>
@@ -90,6 +96,7 @@ const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
 let endpoint = '/api/login';
 
 if (MODE === 'setup') {
+  show('agree');
   $('heading').textContent = 'Set up your workspace';
   $('lead').textContent = 'Create the admin account. You can invite your team right after.';
   show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
@@ -97,6 +104,7 @@ if (MODE === 'setup') {
   endpoint = '/api/setup';
   document.title = document.title.replace('Sign in', 'Set up');
 } else if (MODE === 'invite') {
+  show('agree');
   $('heading').textContent = 'Join Madifyx Clips';
   $('lead').textContent = "You've been invited to a team on Madifyx Clips. Create your account to start recording.";
   show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
@@ -104,6 +112,7 @@ if (MODE === 'setup') {
   endpoint = '/api' + location.pathname;
   document.title = document.title.replace('Sign in', 'Join');
 } else if (MODE === 'signup') {
+  show('agree');
   $('heading').textContent = 'Create your free account';
   $('lead').textContent = 'Record your screen and camera, then share a link. No card needed.';
   show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
@@ -156,7 +165,7 @@ if (MODE !== 'expired' && MODE !== 'closed') {
 
 // Step two: the code from the email
 function askForCode(id, email) {
-  ['nameField', 'emailField', 'pwField', 'toLogin', 'toSignup', 'foot'].forEach(x => show(x, false));
+  ['nameField', 'emailField', 'pwField', 'toLogin', 'toSignup', 'foot', 'agree'].forEach(x => show(x, false));
   show('codeField'); show('resendLine'); show('err', false);
   $('heading').textContent = 'Check your email';
   $('lead').innerHTML = 'We sent a 6-digit code to <b></b>. Enter it below, or click the button in the email.';

@@ -63,7 +63,7 @@ function toast(msg) {
   t.className = 'toast'; t.setAttribute('role', 'status');
   t.innerHTML = icon('check') + '<span></span>';
   t.querySelector('span').textContent = msg;
-  document.body.appendChild(t);
+  (document.querySelector('dialog[open]') || document.body).appendChild(t);
   setTimeout(() => t.remove(), 2400);
 }
 
@@ -146,13 +146,18 @@ function renderShell(active) {
 // ---------- plans ----------
 const PAID_PERKS = ['Unlimited videos', 'Record as long as you like', 'Invite your teammates', 'Your workspace name on share pages instead of Madifyx'];
 
-async function startCheckout(btn) {
+// `say` shows a message right next to the button (toasts would hide behind the pop-up)
+async function startCheckout(btn, say = msg => alert(msg)) {
   const me = window.ME || await window.meReady;
-  if (me.role !== 'owner') { toast('Ask your workspace admin to upgrade'); return; }
-  if (!me.billing.ready) { toast('Payments are not available yet'); return; }
+  if (me.role !== 'owner') { say('Only your workspace admin can upgrade.'); return; }
+  if (!me.billing.ready) {
+    say(me.isAdmin ? 'Payments are not switched on yet. Add STRIPE_SECRET_KEY and STRIPE_PRICE_ID in Render, then try again.'
+                   : "Upgrades aren't available just yet. Please try again a little later.");
+    return;
+  }
   if (btn) { btn.disabled = true; btn.textContent = 'Opening secure checkout'; }
   try { const r = await api('/api/billing/checkout', 'POST', {}); location.href = r.url; }
-  catch (e) { alert(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Upgrade now'; } }
+  catch (e) { say(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Upgrade now'; } }
 }
 
 // Pop-up that explains what upgrading unlocks. `reason` is a short sentence shown on top.
@@ -168,12 +173,13 @@ async function showUpgrade(reason) {
     <h2>${reason ? esc(reason) : 'Get more from Madifyx Clips'}</h2>
     <ul class="up-perks">${PAID_PERKS.map(p => `<li>${icon('check')}${esc(p)}</li>`).join('')}</ul>
     ${me.billing.price ? `<div class="up-price"><span class="num">${esc(me.billing.price.split('/')[0])}</span> per ${esc(me.billing.price.split('/')[1])} for your whole workspace</div>` : ''}
-    ${owner ? `<button class="btn primary block up-go">Upgrade now</button><p class="up-note">Secure checkout by Stripe. Cancel any time.</p>`
+    ${owner ? `<button class="btn primary block up-go">Upgrade now</button><p class="up-msg hidden" role="alert"></p><p class="up-note">Secure checkout by Stripe. Cancel any time.</p>`
             : `<p class="up-note">Only your workspace admin can upgrade. Let them know you need more.</p>`}
   </div>`;
   document.body.appendChild(d);
   d.querySelector('.up-x').onclick = () => d.close();
   d.addEventListener('close', () => d.remove());
-  const go = d.querySelector('.up-go'); if (go) go.onclick = () => startCheckout(go);
+  const msg = d.querySelector('.up-msg');
+  const go = d.querySelector('.up-go'); if (go) go.onclick = () => startCheckout(go, t => { msg.textContent = t; msg.classList.remove('hidden'); });
   d.showModal();
 }
