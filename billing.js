@@ -55,17 +55,18 @@ const listSubscriptions = customer => stripe('GET', '/v1/subscriptions', { custo
 const createPortal = ({ customerId, returnUrl }) => stripe('POST', '/v1/billing_portal/sessions', { customer: customerId, return_url: returnUrl });
 
 // Shows the price on the upgrade button, e.g. "$9/month". Cached for an hour.
-let priceCache = { at: 0, label: null };
-async function priceLabel() {
+let priceCache = { at: 0, label: null, error: null };
+async function priceLabel(fresh) {
   if (!billingReady()) return null;
-  if (Date.now() - priceCache.at < 3600e3) return priceCache.label;
+  if (!fresh && Date.now() - priceCache.at < (priceCache.label ? 3600e3 : 120e3)) return priceCache.label;
   try {
     const p = await stripe('GET', `/v1/prices/${encodeURIComponent(PRICE)}`);
     const amount = (p.unit_amount || 0) / 100;
     const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: (p.currency || 'usd').toUpperCase(), minimumFractionDigits: amount % 1 ? 2 : 0 }).format(amount);
     const every = p.recurring ? (p.recurring.interval_count > 1 ? `${p.recurring.interval_count} ${p.recurring.interval}s` : p.recurring.interval) : 'once';
-    priceCache = { at: Date.now(), label: `${money}/${every}` };
-  } catch (e) { console.error('Could not read the Stripe price:', e.message); priceCache = { at: Date.now() - 3000e3, label: null }; }
+    if (!p.recurring) throw new Error('This price is a one-time price. Pro needs a recurring monthly price.');
+    priceCache = { at: Date.now(), label: `${money}/${every}`, error: null };
+  } catch (e) { console.error('Could not read the Stripe price:', e.message); priceCache = { at: Date.now(), label: null, error: e.message }; }
   return priceCache.label;
 }
 
@@ -83,4 +84,16 @@ function verifyWebhook(rawBody, header) {
   return JSON.parse(rawBody);
 }
 
-module.exports = { billingReady, createCheckout, getCheckout, getSubscription, listSubscriptions, createPortal, priceLabel, verifyWebhook, encode };
+// A plain-language health check for the admin page
+async function stripeStatus() {
+  if (!KEY && !PRICE) return { ok: false, problem: 'STRIPE_SECRET_KEY and STRIPE_PRICE_ID are missing in Render.' };
+  if (!KEY) return { ok: false, problem: 'STRIPE_SECRET_KEY is missing in Render.' };
+  if (!PRICE) return { ok: false, problem: 'STRIPE_PRICE_ID is missing in Render.' };
+  if (!/^(sk|rk)_(test|live)_/.test(KEY)) return { ok: false, problem: `STRIPE_SECRET_KEY should start with sk_test_ or sk_live_ (yours starts with ${KEY.slice(0, 3)}...).` };
+  if (!PRICE.startsWith('price_')) return { ok: false, problem: `STRIPE_PRICE_ID should start with price_ (yours starts with ${PRICE.slice(0, 5)}...). Open the product in Stripe and copy the ID on the price row.` };
+  const label = await priceLabel(true);
+  if (!label) return { ok: false, problem: 'Stripe said: ' + (priceCache.error || 'unknown error') + (/No such price/.test(priceCache.error || '') ? ' (Check the key and the price are both from test mode, or both from live mode.)' : '') };
+  return { ok: true, price: label, mode: KEY.includes('_live_') ? 'live' : 'test', webhook: !!WEBHOOK_SECRET };
+}
+
+module.exports = { stripeStatus, billingReady, createCheckout, getCheckout, getSubscription, listSubscriptions, createPortal, priceLabel, verifyWebhook, encode };

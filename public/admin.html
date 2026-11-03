@@ -80,7 +80,8 @@
     $('signupState').textContent = s.openSignup ? 'On' : 'Off';
     $('signupUrl').value = s.signupUrl;
     $('status').innerHTML = `<span><i class="${s.emailReady ? 'ok' : ''}"></i>Email verification ${s.emailReady ? 'connected' : 'not set up (needed for sign ups)'}</span>
-      <span><i class="${s.billingReady ? 'ok' : ''}"></i>Stripe payments ${s.billingReady ? 'connected' : 'not set up'}</span>`;
+      <span><i class="${s.stripe.ok ? 'ok' : ''}"></i>${s.stripe.ok ? `Stripe connected (${s.stripe.mode} mode, ${esc(s.stripe.price)})${s.stripe.webhook ? '' : ', but STRIPE_WEBHOOK_SECRET is missing'}` : 'Stripe not working'}</span>
+      ${s.stripe.ok ? '' : `<div class="up-msg" style="flex-basis:100%;margin:4px 0 0">${esc(s.stripe.problem)}</div>`}`;
   }
   showSettings(settings);
   $('signupToggle').onchange = async () => {

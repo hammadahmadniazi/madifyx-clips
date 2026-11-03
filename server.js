@@ -554,7 +554,7 @@ const server = http.createServer(async (req, res) => {
     if (m === 'GET' && (p === '/terms' || p === '/privacy')) {
       return send(res, 200, page(p.slice(1) + '.html', {
         SUPPORT_EMAIL: escapeHtml(process.env.SUPPORT_EMAIL || OWNER_EMAIL || 'support@madifyx.com'),
-        JURISDICTION: escapeHtml(process.env.LEGAL_JURISDICTION || 'the State of New York, United States'),
+        JURISDICTION: escapeHtml(process.env.LEGAL_JURISDICTION || 'the State of Florida, United States'),
         UPDATED: 'November 3, 2026',
       }), MIME['.html']);
     }
@@ -826,7 +826,7 @@ const server = http.createServer(async (req, res) => {
           if (body.openSignup && !mailReady()) return json(res, 400, { error: 'Set up email sending first, so new accounts can confirm their email.' });
           db.settings.openSignup = !!body.openSignup; saveDb();
         }
-        return json(res, 200, { openSignup: signupOpen(), emailReady: mailReady(), billingReady: billing.billingReady(), signupUrl: `${baseUrl(req)}/signup` });
+        return json(res, 200, { openSignup: signupOpen(), emailReady: mailReady(), billingReady: billing.billingReady(), stripe: await billing.stripeStatus(), signupUrl: `${baseUrl(req)}/signup` });
       }
     }
 
