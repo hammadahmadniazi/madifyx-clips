@@ -22,6 +22,14 @@
   .status i.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
   .filter { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
   .filter .input { max-width: 300px; height: 38px; }
+  .onlylimit { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+  .usage { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+  .usage .bar { flex: 1; height: 5px; border-radius: 5px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .usage .bar div { height: 100%; background: linear-gradient(90deg, var(--brand-2), var(--brand)); }
+  .usage.full .bar div { background: var(--warn); }
+  .badge-warn { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(247,185,85,.14); color: #F7D49A; box-shadow: inset 0 0 0 1px rgba(247,185,85,.4); white-space: nowrap; }
+  .person-cell { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+  .person-cell .avatar { width: 30px; height: 30px; font-size: 11.5px; box-shadow: none; }
   @media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hide-sm { display: none; } }
 </style>
 </head>
@@ -30,7 +38,7 @@
   <aside class="side" id="side"></aside>
   <main class="main">
     <div class="wrap">
-      <div class="page-head"><div><h1>Admin</h1><div class="sub">Every workspace on Madifyx Clips. Only you can see this page.</div></div></div>
+      <div class="page-head"><div><h1>Admin</h1><div class="sub">Everyone on Madifyx Clips. Only you can see this page.</div></div></div>
 
       <div class="kpis" id="kpis"></div>
 
@@ -47,18 +55,20 @@
       </section>
 
       <section class="panel">
-        <div class="panel-head"><div><h2>Workspaces</h2><p>Switch on "Free forever" to give a workspace everything at no cost (your team, partners, friends).</p></div></div>
-        <div class="filter">
-          <input class="input" id="filter" type="search" placeholder="Filter by name or email">
-          <div class="seg" id="planFilter" role="group" aria-label="Plan">
-            <button data-p="all" aria-pressed="true">All</button>
-            <button data-p="pro" aria-pressed="false">Paid and free forever</button>
-            <button data-p="free" aria-pressed="false">Free plan</button>
-          </div>
+        <div class="panel-head"><div><h2>People</h2><p>Everyone with an account, by plan. "Free access" gives their whole workspace everything at no cost.</p></div></div>
+        <div class="tabs" id="groupTabs" role="tablist" aria-label="Plan group" style="margin-bottom:18px">
+          <button role="tab" data-g="team" aria-pressed="true">Team and free forever <span class="tcount" id="cTeam"></span></button>
+          <button role="tab" data-g="free" aria-pressed="false">Free plan <span class="tcount" id="cFree"></span></button>
+          <button role="tab" data-g="paid" aria-pressed="false">Paid <span class="tcount" id="cPaid"></span></button>
         </div>
+        <div class="filter">
+          <input class="input" id="filter" type="search" placeholder="Filter by name, email or workspace">
+          <label class="onlylimit hidden" id="limitWrap"><input type="checkbox" id="onlyLimit" style="accent-color:var(--brand)"> Only people who reached the limit</label>
+        </div>
+        <p class="muted" id="groupHelp" style="font-size:13.5px;margin:0 0 12px"></p>
         <div class="tscroll">
           <table class="table">
-            <thead><tr><th>Workspace</th><th class="hide-sm">Owner</th><th>Plan</th><th class="hide-sm">People</th><th class="hide-sm">Videos</th><th>Free forever</th></tr></thead>
+            <thead><tr><th>Person</th><th>Workspace</th><th id="colStatus">Access</th><th class="hide-sm">Videos</th><th class="hide-sm">Joined</th><th>Free access</th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
         </div>
@@ -71,7 +81,6 @@
 <script>
 (async function () {
   await renderShell('admin');
-  let list = [], planFilter = 'all';
 
   const settings = await api('/api/admin/settings');
   function showSettings(s) {
@@ -90,42 +99,66 @@
   };
   $('copySignup').onclick = () => copyText($('signupUrl').value, 'Sign up link copied');
 
-  function planLabel(w) {
-    if (w.comp) return '<span class="plan-badge pro">Free forever</span>';
-    if (w.plan === 'pro') return `<span class="plan-badge pro">Pro${w.subStatus === 'past_due' ? ', payment due' : ''}</span>`;
-    return `<span class="plan-badge">Free${w.subStatus === 'canceled' ? ', cancelled' : ''}</span>`;
+  let people = [], group = 'team';
+  const HELP = {
+    team: 'Your Madifyx team plus anyone you gave free access. They have every Pro feature at no cost. Switch off free access to move a workspace back to its normal plan.',
+    free: 'On the Free plan. Anyone at the limit has to delete videos or upgrade to record more. Switch on free access to give them everything at no cost.',
+    paid: 'Paying for Pro through Stripe. Billing and cancelling happen in Stripe.',
+  };
+  function status(u) {
+    if (u.group === 'team') return u.workspace.home ? '<span class="plan-badge pro">Your team</span>' : '<span class="plan-badge pro">Free forever</span>';
+    if (u.group === 'paid') return `<span class="plan-badge pro">Pro${u.workspace.subStatus === 'past_due' ? ', payment due' : u.workspace.subStatus === 'trialing' ? ', trial' : ''}</span>`;
+    const used = u.workspace.videos, max = u.limit, pct = Math.min(100, Math.round(used / max * 100));
+    return `<div class="usage ${u.atLimit ? 'full' : ''}"><div class="bar"><div style="width:${pct}%"></div></div><span class="num" style="font-size:12.5px">${used}/${max}</span></div>${u.atLimit ? '<div style="margin-top:6px"><span class="badge-warn">Limit reached</span></div>' : ''}`;
   }
   function render() {
     const q = $('filter').value.trim().toLowerCase();
-    const rows = list.filter(w => (planFilter === 'all' || w.plan === planFilter) &&
-      (!q || w.name.toLowerCase().includes(q) || (w.owner && (w.owner.email.includes(q) || w.owner.name.toLowerCase().includes(q)))));
-    $('rows').innerHTML = rows.map(w => `<tr data-id="${esc(w.id)}">
-      <td><b>${esc(w.name)}</b>${w.home ? ' <span class="muted">(yours)</span>' : ''}<div class="sub">Since ${new Date(w.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div></td>
-      <td class="hide-sm">${w.owner ? `${esc(w.owner.name)}<div class="sub">${esc(w.owner.email)}</div>` : '<span class="muted">None</span>'}</td>
-      <td>${planLabel(w)}</td>
-      <td class="hide-sm num">${w.members}</td>
-      <td class="hide-sm num">${w.videos}</td>
-      <td><label class="switch"><input type="checkbox" data-comp ${w.comp ? 'checked' : ''} ${w.home ? 'disabled' : ''} aria-label="Free forever for ${esc(w.name)}"><span></span></label></td>
-    </tr>`).join('') || '<tr><td colspan="6" class="muted">No workspaces match.</td></tr>';
-    const paying = list.filter(w => w.plan === 'pro' && !w.comp).length;
+    const only = group === 'free' && $('onlyLimit').checked;
+    const rows = people.filter(u => u.group === group && (!only || u.atLimit) &&
+      (!q || u.name.toLowerCase().includes(q) || u.email.includes(q) || (u.workspace.name || '').toLowerCase().includes(q)));
+    $('cTeam').textContent = people.filter(u => u.group === 'team').length;
+    $('cFree').textContent = people.filter(u => u.group === 'free').length;
+    $('cPaid').textContent = people.filter(u => u.group === 'paid').length;
+    $('groupHelp').textContent = HELP[group];
+    $('limitWrap').classList.toggle('hidden', group !== 'free');
+    $('colStatus').textContent = group === 'free' ? 'Videos used' : group === 'paid' ? 'Subscription' : 'Access';
+    $('rows').innerHTML = rows.map(u => `<tr data-ws="${esc(u.workspace.id)}">
+      <td><div class="person-cell">${avatar(u.name)}<div><b>${esc(u.name)}</b><div class="sub">${esc(u.email)}</div></div></div></td>
+      <td>${esc(u.workspace.name || '')}<div class="sub">${u.role === 'owner' ? 'Admin' : 'Member'}${u.workspace.members > 1 ? `, ${u.workspace.members} people` : ''}</div></td>
+      <td>${status(u)}</td>
+      <td class="hide-sm num">${u.videos}</td>
+      <td class="hide-sm"><span class="sub" style="font-size:13px">${new Date(u.joined).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></td>
+      <td><label class="switch"><input type="checkbox" data-comp ${u.group === 'team' ? 'checked' : ''} ${u.workspace.home ? 'disabled' : ''} aria-label="Free access for ${esc(u.name)}"><span></span></label></td>
+    </tr>`).join('') || `<tr><td colspan="6" class="muted">${group === 'free' && only ? 'Nobody has reached the limit yet.' : 'Nobody here yet.'}</td></tr>`;
+    const atLimit = people.filter(u => u.atLimit).length;
+    const payingWs = new Set(people.filter(u => u.group === 'paid').map(u => u.workspace.id)).size;
+    const ppl = n => n + (n === 1 ? ' person' : ' people');
     $('kpis').innerHTML = [
-      ['Workspaces', list.length], ['Paying', paying], ['Free forever', list.filter(w => w.comp).length], ['Videos', list.reduce((n, w) => n + w.videos, 0)],
+      ['Team and free forever', ppl(people.filter(u => u.group === 'team').length)],
+      ['Free plan', ppl(people.filter(u => u.group === 'free').length)],
+      ['Reached free limit', ppl(atLimit)],
+      ['Paying workspaces', payingWs],
     ].map(([k, v]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
   }
-  async function load() { list = await api('/api/admin/workspaces'); render(); }
+  async function load() { people = await api('/api/admin/users'); render(); }
   $('filter').addEventListener('input', render);
-  $('planFilter').addEventListener('click', e => {
-    const b = e.target.closest('button[data-p]'); if (!b) return;
-    planFilter = b.dataset.p;
-    $('planFilter').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  $('onlyLimit').addEventListener('change', render);
+  $('groupTabs').addEventListener('click', e => {
+    const b = e.target.closest('button[data-g]'); if (!b) return;
+    group = b.dataset.g;
+    $('groupTabs').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
     render();
   });
   $('rows').addEventListener('change', async e => {
     const cb = e.target.closest('[data-comp]'); if (!cb) return;
-    const id = cb.closest('tr').dataset.id, w = list.find(x => x.id === id);
+    const wsId = cb.closest('tr').dataset.ws;
+    const u = people.find(x => x.workspace.id === wsId);
+    const others = u.workspace.members > 1 ? ` This applies to everyone in "${u.workspace.name}".` : '';
+    if (cb.checked && others && !confirm(`Give free access to ${u.name}?${others}`)) { cb.checked = false; return; }
+    if (!cb.checked && u.workspace.subStatus && !confirm(`Remove free access from ${u.name}? They'll go back to their paid or free plan.`)) { cb.checked = true; return; }
     try {
-      await api('/api/admin/workspaces/' + id, 'POST', { comp: cb.checked });
-      toast(cb.checked ? `${w.name} is free forever` : `${w.name} is back on its normal plan`);
+      await api('/api/admin/workspaces/' + wsId, 'POST', { comp: cb.checked });
+      toast(cb.checked ? `${u.name} now has free access` : `${u.name} is back on their normal plan`);
       load();
     } catch (err) { cb.checked = !cb.checked; alert(err.message); }
   });

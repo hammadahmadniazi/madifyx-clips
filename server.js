@@ -812,6 +812,25 @@ const server = http.createServer(async (req, res) => {
         });
         return json(res, 200, list);
       }
+      // Every person, grouped: team and free forever, free plan, paid
+      if (m === 'GET' && p === '/api/admin/users') {
+        const vidsByWs = {}, vidsByUser = {};
+        for (const v of Object.values(db.videos)) { vidsByWs[v.workspaceId] = (vidsByWs[v.workspaceId] || 0) + 1; vidsByUser[v.ownerId] = (vidsByUser[v.ownerId] || 0) + 1; }
+        const members = {};
+        for (const u of Object.values(db.users)) members[u.workspaceId] = (members[u.workspaceId] || 0) + 1;
+        const list = Object.values(db.users).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(u => {
+          const w = db.workspaces[u.workspaceId] || {};
+          const plan = planOf(w);
+          const group = w.comp ? 'team' : plan.key === 'pro' ? 'paid' : 'free';
+          return {
+            id: u.id, name: u.name, email: u.email, role: u.role, joined: u.createdAt, videos: vidsByUser[u.id] || 0,
+            workspace: { id: w.id, name: w.name, home: w.id === db.settings.homeWorkspace, members: members[w.id] || 0, videos: vidsByWs[w.id] || 0, subStatus: w.subStatus || null },
+            group, atLimit: group === 'free' && plan.maxVideos !== null && (vidsByWs[w.id] || 0) >= plan.maxVideos,
+            limit: plan.maxVideos,
+          };
+        });
+        return json(res, 200, list);
+      }
       if (m === 'POST' && (match = /^\/api\/admin\/workspaces\/([\w-]+)$/.exec(p))) {
         const w = db.workspaces[match[1]];
         if (!w) return json(res, 404, { error: 'Not found' });
