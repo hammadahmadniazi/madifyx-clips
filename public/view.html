@@ -19,6 +19,8 @@
 <style>
   .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 32px; background: rgba(7, 8, 13, .72); border-bottom: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
   .topbar .right { display: flex; gap: 8px; align-items: center; }
+  .ws-brand .avatar { border-radius: 11px; }
+  .ws-brand .wsn { font-weight: 800; font-size: 17px; letter-spacing: -.01em; }
   .made { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
   .made::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 10px var(--brand); }
   .watch { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 30px; max-width: 1400px; margin: 0 auto; padding: 30px 32px 72px; align-items: start; }
@@ -97,7 +99,7 @@
 </head>
 <body data-app="{{APP_NAME}}">
 <div class="topbar">
-  <a class="logo" href="/"><img src="/static/brand/logo.png" alt=""><span class="wm"><b>MADIFYX</b><small>CLIPS</small></span></a>
+  <a class="logo" id="brand" href="/"><img src="/static/brand/logo.png" alt=""><span class="wm"><b>MADIFYX</b><small>CLIPS</small></span></a>
   <div class="right" id="topRight"><span class="made">Recorded with {{APP_NAME}}</span></div>
 </div>
 
@@ -157,6 +159,15 @@
   }
   v = await res.json();
   const me = v.me;
+  // Paid workspaces show their own name instead of Madifyx branding
+  if (!v.branding) {
+    const b = $('brand');
+    b.outerHTML = `<span class="logo ws-brand">${avatar(v.workspaceName || 'Team', 'lg')}<span class="wsn"></span></span>`;
+    document.querySelector('.ws-brand .wsn').textContent = v.workspaceName || '';
+    const made = document.querySelector('.made'); if (made) made.remove();
+    document.title = document.title.replace(/\|[^|]*$/, '| ' + (v.workspaceName || ''));
+    const fav = document.querySelector('link[rel=icon]'); if (fav) fav.remove();
+  }
 
   // ----- video -----
   if (v.thumb) player.poster = v.thumb;

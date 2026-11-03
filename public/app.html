@@ -19,6 +19,7 @@
     <div class="page-head lib-head">
       <h1 id="libTitle">My library</h1>
     </div>
+    <div class="planbar hidden" id="planbar"></div>
     <div class="tabs" id="scope" role="tablist" aria-label="Whose videos">
       <button role="tab" data-scope="mine" aria-pressed="true">Videos <span class="tcount" id="count"></span></button>
       <button role="tab" data-scope="all" aria-pressed="false" class="hidden" id="teamTab">Team videos</button>
@@ -85,6 +86,7 @@
     <button class="btn block start" id="startBtn"><span class="ring"></span> Start recording</button>
     <button class="btn block upload" id="uploadBtn" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 19.5h14"/></svg> Upload a video instead</button>
     <input type="file" id="fileInput" accept="video/*" hidden>
+    <div class="limit-note hidden" id="limitNote"></div>
     <div class="tip" id="tip">Share your entire screen so your camera bubble shows up in the video.</div>
   </div>
 </dialog>

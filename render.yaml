@@ -16,6 +16,12 @@ services:
         value: Madifyx Clips <clips@madifyx.com>
       - key: RESEND_API_KEY
         sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
       - key: S3_ENDPOINT
         sync: false
       - key: S3_BUCKET

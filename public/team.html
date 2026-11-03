@@ -11,21 +11,23 @@
 <meta name="theme-color" content="#07080D">
 <link rel="stylesheet" href="/static/style.css">
 <style>
-  .wrap { max-width: 760px; }
+  .wrap { max-width: 780px; }
   .invite-box { margin-top: 16px; padding: 16px; border-radius: 15px; background: rgba(0, 195, 255, .06); border: 1px solid rgba(0, 195, 255, .25); }
   .invite-box p { margin: 0 0 10px; font-size: 14px; color: var(--brand-ink); font-weight: 500; }
   .pending { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
   .pending .p { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
   .pending .p span { flex: 1; }
-  .msg { font-size: 13px; margin-top: 10px; }
-  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
-  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-  .switch span { width: 44px; height: 26px; border-radius: 999px; background: rgba(255,255,255,.12); position: relative; transition: background .15s, box-shadow .2s; }
-  .switch span::after { content: ''; position: absolute; left: 4px; top: 4px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
-  .switch input:checked + span { background: var(--brand); box-shadow: 0 0 16px -2px var(--brand-glow); }
-  .switch input:checked + span::after { transform: translateX(18px); }
-  .switch input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
-  .msg.bad { color: #FF7A86; } .msg.good { color: var(--ok); }
+  .plan-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 16px; border-radius: 15px; background: rgba(255, 255, 255, .03); border: 1px solid var(--line); }
+  .plan-row .pname { font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+  .plan-row .pdesc { color: var(--muted); font-size: 14px; margin-top: 3px; }
+  .plan-row .grow { flex: 1; min-width: 200px; }
+  .perks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin: 16px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--ink-2); }
+  .perks li { display: flex; gap: 8px; align-items: flex-start; }
+  .perks svg.i { width: 16px; height: 16px; margin-top: 2px; color: var(--muted); }
+  .perks li.on svg.i { color: var(--brand); }
+  .upsell { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 15px; border: 1px dashed rgba(0, 195, 255, .35); background: rgba(0, 195, 255, .04); color: var(--ink-2); font-size: 14px; }
+  .upsell .grow { flex: 1; }
+  @media (max-width: 720px) { .perks { grid-template-columns: 1fr; } .upsell { flex-direction: column; align-items: flex-start; } }
 </style>
 </head>
 <body data-app="{{APP_NAME}}">
@@ -33,14 +35,37 @@
   <aside class="side" id="side"></aside>
   <main class="main">
     <div class="wrap">
-      <div class="page-head"><div><h1 id="pageTitle">Team</h1><div class="sub" id="pageSub">Everyone here can sign in and record. Anyone with a video link can watch.</div></div></div>
+      <div class="page-head"><div><h1 id="pageTitle">Team</h1><div class="sub" id="pageSub">Your workspace, plan and people.</div></div></div>
+
+      <section class="panel hidden" id="wsPanel">
+        <div class="panel-head"><div><h2>Workspace</h2><p>Shown to people who watch your videos on the paid plan.</p></div></div>
+        <form id="wsForm" class="form-grid" style="grid-template-columns:1fr auto">
+          <label class="field"><span>Workspace name</span><input class="input" id="wsName" required maxlength="80"></label>
+          <button class="btn">Save name</button>
+        </form>
+      </section>
+
+      <section class="panel hidden" id="billing">
+        <div class="panel-head"><div><h2>Plan and billing</h2></div></div>
+        <div class="plan-row">
+          <div class="grow"><div class="pname" id="planName"></div><div class="pdesc" id="planDesc"></div></div>
+          <button class="btn primary hidden" id="upgradeBtn"></button>
+          <button class="btn hidden" id="portalBtn">Manage billing</button>
+        </div>
+        <ul class="perks" id="perks"></ul>
+      </section>
 
       <section class="panel hidden" id="teamPanel">
         <div class="panel-head">
           <div><h2>People</h2></div>
-          <button class="btn primary" id="inviteBtn">Invite teammate</button>
+          <button class="btn primary hidden" id="inviteBtn">Invite teammate</button>
         </div>
         <div class="people" id="people"></div>
+
+        <div class="upsell hidden" id="teamUpsell">
+          <div class="grow"><b style="color:#fff">Work together</b><br>Upgrade to invite teammates into this workspace.</div>
+          <button class="btn primary sm" id="teamUpBtn">Upgrade</button>
+        </div>
 
         <div class="invite-box hidden" id="inviteBox">
           <p>Send this link to your teammate. They choose their own password. It works once and expires in 7 days.</p>
@@ -57,17 +82,17 @@
 
       <section class="panel hidden" id="joinPanel">
         <div class="panel-head">
-          <div><h2>Sign up page</h2><p>When it's on, your team can create their own profiles at your sign up page. Everyone confirms their email with a code first.</p></div>
+          <div><h2>Team join link</h2><p>One link for your whole team. Each person creates their own profile and confirms their email.</p></div>
           <label class="switch"><input type="checkbox" id="joinToggle" role="switch"><span></span><b id="joinState">Off</b></label>
         </div>
-        <p class="msg hidden" id="emailNote" style="margin:0 0 4px;color:var(--warn)">Sign ups need email verification. Add your email service settings in Render (RESEND_API_KEY and MAIL_FROM) to switch this on.</p>
         <div id="joinBox" class="hidden">
           <div class="linkbox">
-            <input class="input" id="joinUrl" readonly aria-label="Sign up page address">
+            <input class="input" id="joinUrl" readonly aria-label="Team join link">
             <button class="btn primary" id="copyJoin">Copy</button>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
-            <span class="muted" style="font-size:13px">Anyone who finds this page can join as a member while it's on. Switch it off when your team has joined.</span>
+            <span class="muted" style="font-size:13px">Only share it with your team. Switch it off when everyone has joined.</span>
+            <button class="btn ghost sm" id="resetJoin">Make a new link</button>
           </div>
         </div>
       </section>
@@ -92,45 +117,114 @@
 <script src="/static/shell.js"></script>
 <script>
 (async function () {
-  const me = await renderShell('team');
+  let me = await renderShell('team');
+  const owner = me.role === 'owner';
   $('meLine').textContent = me.email;
   $('myName').value = me.name;
+
+  // ---- coming back from Stripe ----
+  const params = new URLSearchParams(location.search);
+  if (params.get('billing') === 'success') {
+    history.replaceState(null, '', '/team#billing');
+    try { me.workspace = await api('/api/billing/sync', 'POST', { sessionId: params.get('session_id') }); window.ME.workspace = me.workspace; } catch (e) {}
+    toast(me.workspace.plan === 'pro' ? 'You are on Pro now. Thank you!' : 'Payment received. Your plan updates in a moment.');
+    if (me.workspace.plan === 'pro') document.getElementById('upgradeTop').classList.add('hidden');
+  } else if (params.get('billing') === 'cancelled') {
+    history.replaceState(null, '', '/team#billing');
+    toast('Checkout cancelled. Nothing was charged.');
+  }
+
+  if (!owner) {
+    $('pageTitle').textContent = 'Account';
+    $('pageSub').textContent = `You're a member of ${me.workspace.name}.`;
+    document.title = document.title.replace('Team', 'Account');
+  } else {
+    ['wsPanel', 'billing', 'teamPanel'].forEach(id => $(id).classList.remove('hidden'));
+    $('wsName').value = me.workspace.name;
+    renderPlan();
+    loadPeople();
+    if (me.workspace.limits.team) {
+      $('inviteBtn').classList.remove('hidden');
+      $('joinPanel').classList.remove('hidden');
+      loadInvites();
+      showJoin(await api('/api/join-link'));
+    } else {
+      $('teamUpsell').classList.remove('hidden');
+    }
+    if (location.hash === '#billing') setTimeout(() => $('billing').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  }
+
+  // ---- plan ----
+  function renderPlan() {
+    const ws = me.workspace, free = ws.plan === 'free';
+    $('planName').innerHTML = `${esc(ws.planName)} <span class="plan-badge ${ws.plan}" style="vertical-align:middle;margin-left:6px">${free ? 'Current' : 'Active'}</span>`;
+    $('planDesc').textContent = ws.comp ? 'Everything is included, at no cost.'
+      : free ? `${ws.usage.videos} of ${ws.limits.maxVideos} videos used. Up to ${limitLabel(ws.limits.maxSeconds)} each.`
+      : ws.subStatus === 'past_due' ? 'Your last payment failed. Update your card in Manage billing to keep Pro.'
+      : `Unlimited videos and teammates${me.billing.price ? `, ${me.billing.price}` : ''}.`;
+    const perk = (on, text) => `<li class="${on ? 'on' : ''}">${icon(on ? 'check' : 'x')}${esc(text)}</li>`;
+    $('perks').innerHTML = [
+      perk(!free, free ? `${ws.limits.maxVideos} videos` : 'Unlimited videos'),
+      perk(!free, free ? `Up to ${limitLabel(ws.limits.maxSeconds)} per video` : 'No time limit on recordings'),
+      perk(!free, 'Invite teammates'),
+      perk(!free, 'Your workspace name on share pages'),
+    ].join('');
+    $('upgradeBtn').classList.toggle('hidden', !free);
+    $('upgradeBtn').innerHTML = `${icon('spark')} Upgrade${me.billing.price ? ` for ${esc(me.billing.price)}` : ''}`;
+    $('upgradeBtn').onclick = () => showUpgrade();
+    $('portalBtn').textContent = 'Manage billing';
+    $('portalBtn').classList.toggle('hidden', !ws.hasBilling || ws.comp);
+  }
+  $('portalBtn').onclick = async () => {
+    $('portalBtn').disabled = true;
+    try { const r = await api('/api/billing/portal', 'POST', {}); location.href = r.url; }
+    catch (e) { alert(e.message); $('portalBtn').disabled = false; }
+  };
+  $('teamUpBtn').onclick = () => showUpgrade('Invite your teammates');
+
+  $('wsForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    try { me.workspace = await api('/api/workspace', 'PATCH', { name: $('wsName').value }); toast('Workspace name saved'); }
+    catch (err) { alert(err.message); }
+  });
+
+  // ---- profile ----
   $('nameForm').addEventListener('submit', async e => {
     e.preventDefault();
     try {
       const u = await api('/api/me', 'PATCH', { name: $('myName').value });
-      me.name = u.name;
-      document.querySelector('#me .nm').textContent = u.name;
-      toast('Name saved');
+      me.name = u.name; toast('Name saved');
     } catch (err) { alert(err.message); }
   });
-  $('inviteBtn').innerHTML = icon('plus') + ' Invite teammate';
+  $('pwForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = $('pwMsg');
+    try {
+      await api('/api/me/password', 'POST', { current: $('pCur').value, next: $('pNew').value });
+      msg.textContent = 'Password changed. Your other devices have been signed out.'; msg.className = 'msg good';
+      e.target.reset();
+    } catch (err) { msg.textContent = err.message; msg.className = 'msg bad'; }
+  });
 
-  if (me.role !== 'owner') {
-    $('pageTitle').textContent = 'Account';
-    $('pageSub').textContent = 'Manage how you sign in.';
-    document.title = document.title.replace('Team', 'Account');
-  } else {
-    $('teamPanel').classList.remove('hidden');
-    $('joinPanel').classList.remove('hidden');
-    loadPeople(); loadInvites(); showJoin(await api('/api/signup-settings'));
-  }
-
+  // ---- join link ----
   function showJoin(j) {
-    $('joinToggle').checked = j.open;
+    $('joinToggle').checked = j.enabled;
     $('joinToggle').disabled = !j.emailReady;
-    $('emailNote').classList.toggle('hidden', !!j.emailReady);
-    $('joinState').textContent = j.open ? 'On' : 'Off';
-    $('joinBox').classList.toggle('hidden', !j.open);
+    $('joinState').textContent = j.enabled ? 'On' : 'Off';
+    $('joinBox').classList.toggle('hidden', !j.enabled);
     $('joinUrl').value = j.url || '';
   }
   $('joinToggle').onchange = async () => {
-    try { showJoin(await api('/api/signup-settings', 'POST', { open: $('joinToggle').checked })); }
-    catch (err) { $('joinToggle').checked = false; alert(err.message); return; }
-    toast($('joinToggle').checked ? 'Sign ups are on' : 'Sign ups are off');
+    try { showJoin(await api('/api/join-link', $('joinToggle').checked ? 'POST' : 'DELETE')); toast($('joinToggle').checked ? 'Join link is on' : 'Join link is off'); }
+    catch (err) { $('joinToggle').checked = false; alert(err.message); }
   };
-  $('copyJoin').onclick = () => copyText($('joinUrl').value, 'Sign up link copied');
+  $('copyJoin').onclick = () => copyText($('joinUrl').value, 'Join link copied');
+  $('resetJoin').onclick = async () => {
+    if (!confirm('Make a new link? The old one will stop working.')) return;
+    showJoin(await api('/api/join-link', 'POST')); toast('New join link ready');
+  };
 
+  // ---- people ----
   async function loadPeople() {
     const users = await api('/api/users');
     $('people').innerHTML = users.map(u => `
@@ -142,27 +236,23 @@
         ${u.id === me.id ? '<span style="width:36px"></span>' : `<div style="position:relative"><button class="btn ghost icon" data-more aria-label="Options for ${esc(u.name)}">${icon('more')}</button></div>`}
       </div>`).join('');
   }
-
   async function loadInvites() {
     const inv = await api('/api/invites');
-    $('pending').innerHTML = inv.length ? inv.map(i => `
+    $('pending').innerHTML = inv.map(i => `
       <div class="p" data-token="${esc(i.token)}">${icon('link')}
         <span>Open invite (${i.role === 'owner' ? 'admin' : 'member'}), expires ${new Date(i.expires).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
         <button class="btn ghost sm" data-copy="${esc(i.url)}">Copy</button>
         <button class="btn ghost sm danger-text" data-revoke>Cancel</button>
-      </div>`).join('') : '';
+      </div>`).join('');
   }
-
+  let lastInvite = null;
   async function makeInvite() {
     const i = await api('/api/invites', 'POST', { role: $('inviteAdmin').checked ? 'owner' : 'member' });
-    $('inviteUrl').value = i.url;
-    $('inviteBox').classList.remove('hidden');
-    $('inviteUrl').select();
+    $('inviteUrl').value = i.url; $('inviteBox').classList.remove('hidden'); $('inviteUrl').select();
     loadInvites();
     return i;
   }
-  let lastInvite = null;
-  $('inviteBtn').onclick = async () => { lastInvite = await makeInvite(); };
+  $('inviteBtn').onclick = async () => { try { lastInvite = await makeInvite(); } catch (e) { alert(e.message); } };
   $('copyInvite').onclick = () => copyText($('inviteUrl').value, 'Invite link copied');
   $('inviteAdmin').onchange = async () => {
     if (lastInvite) await api('/api/invites/' + lastInvite.token, 'DELETE');
@@ -178,12 +268,10 @@
       loadInvites(); toast('Invite cancelled');
     }
   });
-
-  // Person menu: reset password, remove
   $('people').addEventListener('click', async e => {
     const b = e.target.closest('[data-more]'); if (!b) return;
     e.stopPropagation();
-    document.querySelectorAll('.menu').forEach(m => m.remove());
+    document.querySelectorAll('.menu:not(.avmenu)').forEach(m => m.remove());
     const row = b.closest('.person');
     const m = document.createElement('div');
     m.className = 'menu'; m.setAttribute('role', 'menu'); m.style.right = '0'; m.style.top = '40px';
@@ -208,17 +296,7 @@
       } catch (err) { alert(err.message); }
     };
   });
-  document.addEventListener('click', e => { document.querySelectorAll('.menu').forEach(m => { if (!m.contains(e.target)) m.remove(); }); });
-
-  $('pwForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    const msg = $('pwMsg');
-    try {
-      await api('/api/me/password', 'POST', { current: $('pCur').value, next: $('pNew').value });
-      msg.textContent = 'Password changed. Your other devices have been signed out.'; msg.className = 'msg good';
-      e.target.reset();
-    } catch (err) { msg.textContent = err.message; msg.className = 'msg bad'; }
-  });
+  document.addEventListener('click', e => { document.querySelectorAll('.menu:not(.avmenu)').forEach(m => { if (!m.contains(e.target)) m.remove(); }); });
 })();
 </script>
 </body>

@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const { storage } = require('./storage');
 const { sendMail, verificationEmail, mailReady } = require('./mailer');
+const billing = require('./billing');
 
 const PORT = process.env.PORT || 3000;
 const APP_NAME = process.env.APP_NAME || 'Madifyx Clips';
@@ -27,7 +28,7 @@ let db = { videos: {}, users: {}, sessions: {} };
 if (fs.existsSync(DB_FILE)) {
   try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { console.error('Could not read db.json', e); }
 }
-db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; db.pending ||= {};
+db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; db.pending ||= {}; db.workspaces ||= {};
 let saveTimer = null;
 function saveDb() {
   clearTimeout(saveTimer);
@@ -54,7 +55,54 @@ function pushDb(delay = 1500) {
     }, delay);
   });
 }
-function normalizeDb() { db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; db.pending ||= {}; }
+function normalizeDb() { db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; db.pending ||= {}; db.workspaces ||= {}; }
+// ---------- workspaces and plans ----------
+// Every account belongs to one workspace. Each customer's workspace is private:
+// they only ever see their own people and videos.
+const PLANS = {
+  free: { key: 'free', name: 'Free', maxVideos: Number(process.env.FREE_MAX_VIDEOS || 25), maxSeconds: Number(process.env.FREE_MAX_SECONDS || 300), team: false, branding: true },
+  pro: { key: 'pro', name: 'Pro', maxVideos: null, maxSeconds: null, team: true, branding: false },
+};
+const activeStatus = s => ['active', 'trialing', 'past_due'].includes(s);
+const planOf = ws => (ws && (ws.comp || activeStatus(ws.subStatus)) ? PLANS.pro : PLANS.free);
+const wsOf = user => user && db.workspaces[user.workspaceId];
+const wsVideoCount = wsId => Object.values(db.videos).filter(v => v.workspaceId === wsId).length;
+function createWorkspace(name, ownerId, extra = {}) {
+  const id = crypto.randomBytes(8).toString('base64url');
+  db.workspaces[id] = { id, name: String(name).slice(0, 80), ownerId, createdAt: new Date().toISOString(), comp: false, subStatus: null, ...extra };
+  saveDb();
+  return db.workspaces[id];
+}
+function workspaceInfo(ws) {
+  const plan = planOf(ws);
+  return {
+    id: ws.id, name: ws.name, plan: plan.key, planName: ws.comp ? 'Free forever' : plan.name, comp: !!ws.comp,
+    subStatus: ws.subStatus || null, hasBilling: !!ws.stripeCustomerId,
+    limits: { maxVideos: plan.maxVideos, maxSeconds: plan.maxSeconds, team: plan.team, branding: plan.branding },
+    usage: { videos: wsVideoCount(ws.id) },
+  };
+}
+// Older data (before workspaces) moves into one home workspace that is free forever.
+function migrateWorkspaces() {
+  const users = Object.values(db.users);
+  if (!users.length) return;
+  let home = db.settings.homeWorkspace && db.workspaces[db.settings.homeWorkspace];
+  const needs = users.some(u => !u.workspaceId || !db.workspaces[u.workspaceId]);
+  if (!needs && home) return;
+  if (!home) {
+    const owner = users.find(u => u.email === OWNER_EMAIL) || users.find(u => u.role === 'owner') || users[0];
+    home = createWorkspace(process.env.HOME_WORKSPACE_NAME || 'Madifyx', owner.id, { comp: true });
+    db.settings.homeWorkspace = home.id;
+  }
+  for (const u of users) if (!u.workspaceId || !db.workspaces[u.workspaceId]) u.workspaceId = home.id;
+  for (const v of Object.values(db.videos)) if (!v.workspaceId) v.workspaceId = (db.users[v.ownerId] || {}).workspaceId || home.id;
+  for (const inv of Object.values(db.invites)) if (!inv.workspaceId) inv.workspaceId = home.id;
+  saveDb();
+  console.log('Moved existing accounts into the "' + home.name + '" workspace (free forever).');
+}
+// The platform admin (you) can see all workspaces and give any of them free access
+const isPlatformAdmin = u => !!u && (OWNER_EMAIL ? u.email === OWNER_EMAIL : (u.role === 'owner' && u.workspaceId === db.settings.homeWorkspace));
+
 // Make sure the owner email always has owner rights
 function applyOwnerEmail() {
   if (!OWNER_EMAIL) return;
@@ -85,6 +133,11 @@ function publicVideo(v) {
     reactions: v.reactions || {},
     commentCount: (v.comments || []).length,
   };
+}
+function brandingFor(v) {
+  const ws = db.workspaces[v.workspaceId];
+  const plan = planOf(ws);
+  return { branding: plan.branding, workspaceName: plan.branding ? null : (ws ? ws.name : null) };
 }
 
 const REACTIONS = ['\u{1F44D}', '\u2764\uFE0F', '\u{1F602}', '\u{1F389}', '\u{1F525}', '\u{1F440}'];
@@ -147,7 +200,8 @@ async function processVideo(id) {
     }
     const mp4 = id + '.mp4';
     // Converting to mp4 makes the video seekable everywhere and play on iPhone/Safari.
-    await runFfmpeg(['-i', input, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-threads', '2',
+    const trim = v.limitSeconds ? ['-t', String(v.limitSeconds)] : [];
+    await runFfmpeg(['-i', input, ...trim, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-threads', '2',
       '-pix_fmt', 'yuv420p', '-vf', "scale='min(iw,1920)':'min(ih,1920)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
       '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', localPath(mp4)]);
     const thumb = id + '.jpg';
@@ -301,16 +355,16 @@ function validateNewUser(body) {
   if (findUserByEmail(email)) return { error: 'That email already has an account' };
   return { name, email, password };
 }
-function addUser({ name, email, password, salt: s0, hash: h0 }, role) {
+function addUser({ name, email, password, salt: s0, hash: h0 }, role, workspaceId) {
   const id = crypto.randomBytes(8).toString('base64url');
   const { salt, hash } = s0 && h0 ? { salt: s0, hash: h0 } : hashPassword(password);
-  db.users[id] = { id, name, email, role, salt, hash, createdAt: new Date().toISOString() };
+  db.users[id] = { id, name, email, role, salt, hash, workspaceId, createdAt: new Date().toISOString() };
   saveDb();
   return db.users[id];
 }
 const baseUrl = req => `${req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http')}://${req.headers.host}`;
 const redirect = (res, to) => { res.writeHead(302, { Location: to }); res.end(); };
-const canEdit = (user, v) => user.role === 'owner' || v.ownerId === user.id;
+const canEdit = (user, v) => v.workspaceId === user.workspaceId && (user.role === 'owner' || v.ownerId === user.id);
 
 // A fingerprint of the app's files. It changes with every update, so browsers
 // always load the newest styles and scripts instead of an old saved copy.
@@ -330,7 +384,8 @@ function page(file, vars = {}) {
   html = html.replace(/{{[A-Z_]+}}/g, '');
   return html.replace(/(["'(])\/static\/([\w./-]+\.(?:css|js|png|svg))(?=["')])/g, `$1/static/$2?v=${ASSET_VERSION}`);
 }
-// Sign ups need email verification, so they only work once email sending is set up
+// Public sign ups (new customers get their own workspace) need email verification,
+// so they only work once email sending is set up. The platform admin switches them on or off.
 const signupOpen = () => !!db.settings.openSignup && mailReady();
 
 // ---------- email verification ----------
@@ -338,13 +393,13 @@ const signupOpen = () => !!db.settings.openSignup && mailReady();
 // (or clicks the link). Nothing is created for an email its owner never confirmed.
 const sha = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 const PENDING_MINUTES = 30;
-async function startVerification(req, v, role, inviteToken) {
+async function startVerification(req, v, role, inviteToken, joinWorkspaceId) {
   for (const [k, pend] of Object.entries(db.pending)) if (pend.email === v.email || pend.expires < Date.now()) delete db.pending[k];
   const { salt, hash } = hashPassword(v.password);
   const pend = {
     id: crypto.randomBytes(18).toString('base64url'),
     linkToken: crypto.randomBytes(24).toString('base64url'),
-    name: v.name, email: v.email, salt, hash, role, inviteToken: inviteToken || null,
+    name: v.name, email: v.email, salt, hash, role, inviteToken: inviteToken || null, joinWorkspaceId: joinWorkspaceId || null,
     expires: Date.now() + PENDING_MINUTES * 60e3, attempts: 0, sends: 0, sentAt: 0,
   };
   db.pending[pend.id] = pend;
@@ -363,21 +418,33 @@ async function sendCode(req, pend) {
 function finishVerification(req, res, pend) {
   delete db.pending[pend.id];
   if (findUserByEmail(pend.email)) { saveDb(); return { error: 'That email already has an account. Sign in instead.' }; }
-  let role = pend.role;
+  let role = pend.role, wsId = pend.joinWorkspaceId;
   if (pend.inviteToken) {
     const inv = db.invites[pend.inviteToken];
     if (!inv || inv.expires < Date.now()) { saveDb(); return { error: 'This invite has expired. Ask for a new one.' }; }
     delete db.invites[pend.inviteToken];
+    wsId = inv.workspaceId;
   }
-  if (pend.email === OWNER_EMAIL) role = 'owner';
-  const user = addUser({ name: pend.name, email: pend.email, salt: pend.salt, hash: pend.hash }, role);
+  if (wsId && (!db.workspaces[wsId] || !planOf(db.workspaces[wsId]).team)) { saveDb(); return { error: "This team can't add people right now. Ask its admin." }; }
+  const user = addUser({ name: pend.name, email: pend.email, salt: pend.salt, hash: pend.hash }, role, wsId || null);
+  if (!wsId) {
+    // A new customer: their own private workspace, on the Free plan
+    const ws = createWorkspace(`${pend.name.split(' ')[0]}'s workspace`, user.id);
+    user.workspaceId = ws.id; user.role = 'owner';
+  }
+  if (pend.email === OWNER_EMAIL && user.workspaceId === db.settings.homeWorkspace) user.role = 'owner';
+  saveDb();
   createSession(req, res, user);
   return { user };
 }
-const ownerName = () => { const o = Object.values(db.users).find(u => u.role === 'owner'); return escapeHtml(o ? o.name : 'Your team'); };
 
 // ---------- upload ----------
 function handleUpload(req, res, query, user) {
+  const ws = wsOf(user), plan = planOf(ws);
+  if (plan.maxVideos !== null && wsVideoCount(ws.id) >= plan.maxVideos) {
+    req.resume();
+    return json(res, 402, { error: `You've used all ${plan.maxVideos} videos on the Free plan. Upgrade for unlimited videos, or delete old ones.`, upgrade: true });
+  }
   const mime = String(req.headers['content-type'] || 'video/webm').split(';')[0];
   const ext = mime.includes('mp4') || mime.includes('m4v') ? 'mp4' : mime.includes('quicktime') ? 'mov' : 'webm';
   const id = newId();
@@ -403,9 +470,10 @@ function handleUpload(req, res, query, user) {
     const title = String(query.get('title') || '').trim().slice(0, 200) || `Recording ${new Date().toLocaleString('en-US')}`;
     const duration = parseFloat(query.get('duration'));
     db.videos[id] = {
-      id, title, original, mime, sizeBytes: bytes, ownerId: user.id,
+      id, title, original, mime, sizeBytes: bytes, ownerId: user.id, workspaceId: ws.id,
+      limitSeconds: plan.maxSeconds || null,
       createdAt: new Date().toISOString(),
-      duration: Number.isFinite(duration) ? duration : null,
+      duration: Number.isFinite(duration) ? (plan.maxSeconds ? Math.min(duration, plan.maxSeconds) : duration) : null,
       views: 0, status: HAS_FFMPEG || storage.enabled ? 'processing' : 'ready',
     };
     saveDb();
@@ -424,6 +492,17 @@ const server = http.createServer(async (req, res) => {
     const p = decodeURIComponent(url.pathname);
     const m = req.method;
     let match;
+
+    // ---------- Stripe tells us about payments here (signed, so it can't be faked) ----------
+    if (m === 'POST' && p === '/api/stripe/webhook') {
+      const chunks = [];
+      for await (const c of req) { chunks.push(c); if (chunks.length > 2000) break; }
+      let event;
+      try { event = billing.verifyWebhook(Buffer.concat(chunks).toString('utf8'), req.headers['stripe-signature']); }
+      catch (e) { console.error('Stripe webhook rejected:', e.message); return json(res, 400, { error: e.message }); }
+      try { await handleStripeEvent(event); } catch (e) { console.error('Stripe webhook failed:', e.message); return json(res, 500, { error: 'Failed' }); }
+      return json(res, 200, { received: true });
+    }
 
     if ((m === 'GET' || m === 'HEAD') && p.startsWith('/media/')) {
       const file = p.slice(7);
@@ -462,7 +541,7 @@ const server = http.createServer(async (req, res) => {
       const v = db.videos[match[1]];
       if (!v) return json(res, 404, { error: 'Not found' });
       const me = currentUser(req);
-      return json(res, 200, { ...publicVideo(v), canEdit: !!(me && canEdit(me, v)), me: me ? { id: me.id, name: me.name, role: me.role } : null });
+      return json(res, 200, { ...publicVideo(v), ...brandingFor(v), canEdit: !!(me && canEdit(me, v)), me: me && me.workspaceId === v.workspaceId ? { id: me.id, name: me.name, role: me.role } : null });
     }
     if (m === 'POST' && (match = /^\/api\/videos\/([\w-]+)\/view$/.exec(p))) {
       const v = db.videos[match[1]];
@@ -514,8 +593,7 @@ const server = http.createServer(async (req, res) => {
     if ((match = /^\/invite\/([\w-]+)$/.exec(p)) && m === 'GET') {
       const inv = db.invites[match[1]];
       if (!inv || inv.expires < Date.now()) return send(res, 200, page('login.html', { MODE: 'expired', INVITER: '' }), MIME['.html']);
-      const by = db.users[inv.createdBy];
-      return send(res, 200, page('login.html', { MODE: 'invite', INVITER: escapeHtml(by ? by.name : 'Your team') }), MIME['.html']);
+      return send(res, 200, page('login.html', { MODE: 'invite' }), MIME['.html']);
     }
     if ((match = /^\/api\/invite\/([\w-]+)$/.exec(p)) && m === 'POST') {
       const inv = db.invites[match[1]];
@@ -524,23 +602,40 @@ const server = http.createServer(async (req, res) => {
       const v = validateNewUser(body);
       if (v.error) return json(res, 400, v);
       const role = inv.role === 'owner' ? 'owner' : 'member';
+      if (!db.workspaces[inv.workspaceId] || !planOf(db.workspaces[inv.workspaceId]).team) return json(res, 403, { error: "This team can't add people right now. Ask its admin." });
       if (mailReady()) {
         if (limited('j:' + clientIp(req), 10, 60 * 60e3)) return json(res, 429, { error: 'Too many sign ups from here. Try again later.' });
         try { const pend = await startVerification(req, v, role, match[1]); return json(res, 200, { verify: true, id: pend.id, email: pend.email }); }
         catch (e) { console.error('Could not send verification email:', e.message); return json(res, 502, { error: "We couldn't send the verification email. Try again in a minute." }); }
       }
-      const user = addUser(v, role === 'owner' || v.email === OWNER_EMAIL ? 'owner' : 'member');
+      const user = addUser(v, role, inv.workspaceId);
       delete db.invites[match[1]]; saveDb();
       createSession(req, res, user);
       return json(res, 200, { ok: true });
     }
 
-    // ---------- self sign up at /signup (admins can switch it on or off) ----------
-    if (m === 'GET' && (p === '/signup' || /^\/join\/[\w-]+$/.test(p))) {
+    // ---------- public sign up at /signup: new customers get their own free workspace ----------
+    if (m === 'GET' && p === '/signup') {
       if (!hasUsers()) return redirect(res, '/setup');
-      if (p !== '/signup') return redirect(res, '/signup');
       if (currentUser(req)) return redirect(res, '/');
-      return send(res, 200, page('login.html', { MODE: signupOpen() ? 'signup' : 'closed', INVITER: ownerName() }), MIME['.html']);
+      return send(res, 200, page('login.html', { MODE: signupOpen() ? 'signup' : 'closed' }), MIME['.html']);
+    }
+    // ---------- team join link: joins an existing (paid) workspace ----------
+    if ((match = /^\/join\/([\w-]+)$/.exec(p)) && m === 'GET') {
+      const ws = Object.values(db.workspaces).find(w => w.joinCode && w.joinCode === match[1]);
+      if (!ws || !planOf(ws).team) return send(res, 200, page('login.html', { MODE: 'expired' }), MIME['.html']);
+      return send(res, 200, page('login.html', { MODE: 'invite' }), MIME['.html']);
+    }
+    if ((match = /^\/api\/join\/([\w-]+)$/.exec(p)) && m === 'POST') {
+      const ws = Object.values(db.workspaces).find(w => w.joinCode && w.joinCode === match[1]);
+      if (!ws || !planOf(ws).team) return json(res, 410, { error: 'This join link is no longer active. Ask your admin for a new one.' });
+      if (!mailReady()) return json(res, 503, { error: 'Email verification is not set up yet. Ask your admin for an invite.' });
+      if (limited('j:' + clientIp(req), 10, 60 * 60e3)) return json(res, 429, { error: 'Too many sign ups from here. Try again later.' });
+      const body = await readJson(req);
+      const v = validateNewUser(body);
+      if (v.error) return json(res, 400, v);
+      try { const pend = await startVerification(req, v, 'member', null, ws.id); return json(res, 200, { verify: true, id: pend.id, email: pend.email }); }
+      catch (e) { console.error('Could not send verification email:', e.message); return json(res, 502, { error: "We couldn't send the verification email. Try again in a minute." }); }
     }
     if (m === 'POST' && p === '/api/signup') {
       if (!signupOpen()) return json(res, 403, { error: 'Sign ups are closed. Ask your admin for an invite.' });
@@ -548,7 +643,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const v = validateNewUser(body);
       if (v.error) return json(res, 400, v);
-      try { const pend = await startVerification(req, v, 'member'); return json(res, 200, { verify: true, id: pend.id, email: pend.email }); }
+      try { const pend = await startVerification(req, v, 'owner'); return json(res, 200, { verify: true, id: pend.id, email: pend.email }); }
       catch (e) { console.error('Could not send verification email:', e.message); return json(res, 502, { error: "We couldn't send the verification email. Try again in a minute." }); }
     }
 
@@ -591,9 +686,12 @@ const server = http.createServer(async (req, res) => {
       const v = validateNewUser(body);
       if (v.error) return json(res, 400, v);
       if (OWNER_EMAIL && v.email !== OWNER_EMAIL) return json(res, 403, { error: 'This workspace is reserved for its owner. Use the owner email to set it up.' });
-      const user = addUser(v, 'owner');
+      const user = addUser(v, 'owner', null);
+      const home = createWorkspace(process.env.HOME_WORKSPACE_NAME || 'Madifyx', user.id, { comp: true });
+      user.workspaceId = home.id; db.settings.homeWorkspace = home.id;
       // Videos recorded before logins existed now belong to the owner
-      for (const vid of Object.values(db.videos)) if (!vid.ownerId) vid.ownerId = user.id;
+      for (const vid of Object.values(db.videos)) { if (!vid.ownerId) vid.ownerId = user.id; if (!vid.workspaceId) vid.workspaceId = home.id; }
+      saveDb();
       createSession(req, res, user);
       return json(res, 200, { ok: true });
     }
@@ -626,8 +724,94 @@ const server = http.createServer(async (req, res) => {
 
     if (m === 'GET' && p === '/') return send(res, 200, page('app.html'), MIME['.html']);
     if (m === 'GET' && p === '/team') return send(res, 200, page('team.html'), MIME['.html']);
+    if (m === 'GET' && p === '/admin') return isPlatformAdmin(user) ? send(res, 200, page('admin.html'), MIME['.html']) : redirect(res, '/');
     if (m === 'GET' && (p === '/library' || p === '/account' || p === '/record')) return redirect(res, p === '/account' ? '/team' : p === '/record' ? '/?record=1' : '/');
-    if (m === 'GET' && p === '/api/me') return json(res, 200, publicUser(user));
+    if (m === 'GET' && p === '/api/me') {
+      return json(res, 200, { ...publicUser(user), workspace: workspaceInfo(wsOf(user)), isAdmin: isPlatformAdmin(user),
+        billing: { ready: billing.billingReady(), price: await billing.priceLabel() } });
+    }
+    if (m === 'PATCH' && p === '/api/workspace') {
+      if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can rename the workspace' });
+      const body = await readJson(req);
+      const name = String(body.name || '').trim().slice(0, 80);
+      if (!name) return json(res, 400, { error: "The workspace name can't be empty" });
+      wsOf(user).name = name; saveDb();
+      return json(res, 200, workspaceInfo(wsOf(user)));
+    }
+
+    // ---------- billing (workspace admins) ----------
+    if (p.startsWith('/api/billing/')) {
+      const ws = wsOf(user);
+      if (user.role !== 'owner') return json(res, 403, { error: 'Only workspace admins can manage billing' });
+      if (!billing.billingReady()) return json(res, 503, { error: 'Payments are not set up yet.' });
+      const base = baseUrl(req);
+      try {
+        if (m === 'POST' && p === '/api/billing/checkout') {
+          if (ws.comp) return json(res, 400, { error: 'This workspace already has free access to everything.' });
+          if (activeStatus(ws.subStatus)) return json(res, 400, { error: 'You already have the paid plan. Use Manage billing to change it.' });
+          const s = await billing.createCheckout({ workspaceId: ws.id, email: user.email, customerId: ws.stripeCustomerId,
+            successUrl: `${base}/team?billing=success&session_id={CHECKOUT_SESSION_ID}`, cancelUrl: `${base}/team?billing=cancelled` });
+          return json(res, 200, { url: s.url });
+        }
+        if (m === 'POST' && p === '/api/billing/portal') {
+          if (!ws.stripeCustomerId) return json(res, 400, { error: 'There is no billing account yet. Upgrade first.' });
+          const s = await billing.createPortal({ customerId: ws.stripeCustomerId, returnUrl: `${base}/team` });
+          return json(res, 200, { url: s.url });
+        }
+        if (m === 'POST' && p === '/api/billing/sync') {
+          // Called when someone comes back from Stripe, so the plan updates even before the webhook arrives
+          const body = await readJson(req);
+          if (body.sessionId) {
+            const cs = await billing.getCheckout(String(body.sessionId));
+            if (cs.client_reference_id !== ws.id) return json(res, 403, { error: 'That payment belongs to another workspace' });
+            ws.stripeCustomerId = cs.customer || ws.stripeCustomerId;
+            if (cs.subscription) { const sub = await billing.getSubscription(cs.subscription); ws.stripeSubId = sub.id; ws.subStatus = sub.status; }
+          } else if (ws.stripeCustomerId) {
+            const subs = await billing.listSubscriptions(ws.stripeCustomerId);
+            const sub = (subs.data || [])[0];
+            if (sub) { ws.stripeSubId = sub.id; ws.subStatus = sub.status; }
+          }
+          saveDb();
+          return json(res, 200, workspaceInfo(ws));
+        }
+      } catch (e) {
+        console.error('Stripe error:', e.message);
+        return json(res, 502, { error: "Couldn't reach Stripe. Try again in a minute." });
+      }
+    }
+
+    // ---------- platform admin (you): every workspace ----------
+    if (p.startsWith('/api/admin/')) {
+      if (!isPlatformAdmin(user)) return json(res, 403, { error: 'Admins only' });
+      if (m === 'GET' && p === '/api/admin/workspaces') {
+        const members = {}, vids = {};
+        for (const u of Object.values(db.users)) (members[u.workspaceId] ||= []).push(u);
+        for (const v of Object.values(db.videos)) vids[v.workspaceId] = (vids[v.workspaceId] || 0) + 1;
+        const list = Object.values(db.workspaces).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(w => {
+          const owner = db.users[w.ownerId];
+          return { id: w.id, name: w.name, createdAt: w.createdAt, owner: owner ? { name: owner.name, email: owner.email } : null,
+            members: (members[w.id] || []).length, videos: vids[w.id] || 0, plan: planOf(w).key, comp: !!w.comp, subStatus: w.subStatus || null,
+            home: w.id === db.settings.homeWorkspace };
+        });
+        return json(res, 200, list);
+      }
+      if (m === 'POST' && (match = /^\/api\/admin\/workspaces\/([\w-]+)$/.exec(p))) {
+        const w = db.workspaces[match[1]];
+        if (!w) return json(res, 404, { error: 'Not found' });
+        const body = await readJson(req);
+        if (w.id === db.settings.homeWorkspace && !body.comp) return json(res, 400, { error: 'Your own workspace always stays free.' });
+        w.comp = !!body.comp; saveDb();
+        return json(res, 200, { ok: true, plan: planOf(w).key });
+      }
+      if (p === '/api/admin/settings') {
+        if (m === 'POST') {
+          const body = await readJson(req);
+          if (body.openSignup && !mailReady()) return json(res, 400, { error: 'Set up email sending first, so new accounts can confirm their email.' });
+          db.settings.openSignup = !!body.openSignup; saveDb();
+        }
+        return json(res, 200, { openSignup: signupOpen(), emailReady: mailReady(), billingReady: billing.billingReady(), signupUrl: `${baseUrl(req)}/signup` });
+      }
+    }
 
     if (m === 'POST' && p === '/api/me/password') {
       const body = await readJson(req);
@@ -648,15 +832,14 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, publicUser(user));
     }
 
-    // Self sign up switch (owner only)
-    if (p === '/api/signup-settings') {
-      if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can change sign up settings' });
-      if (m === 'POST') {
-        const body = await readJson(req);
-        if (body.open && !mailReady()) return json(res, 400, { error: 'Set up email sending first, so new accounts can confirm their email.' });
-        db.settings.openSignup = !!body.open; saveDb();
-      }
-      return json(res, 200, { open: signupOpen(), emailReady: mailReady(), url: `${baseUrl(req)}/signup` });
+    // Team join link for this workspace (paid plans)
+    if (p === '/api/join-link') {
+      const ws = wsOf(user);
+      if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can manage the join link' });
+      if (m !== 'GET' && !planOf(ws).team) return json(res, 402, { error: 'Upgrade to add teammates.', upgrade: true });
+      if (m === 'POST') { ws.joinCode = crypto.randomBytes(9).toString('base64url'); saveDb(); }
+      if (m === 'DELETE') { ws.joinCode = null; saveDb(); }
+      return json(res, 200, { enabled: !!ws.joinCode && planOf(ws).team, url: ws.joinCode ? `${baseUrl(req)}/join/${ws.joinCode}` : null, emailReady: mailReady() });
     }
 
     // Invites (owner only)
@@ -664,17 +847,19 @@ const server = http.createServer(async (req, res) => {
       if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can invite people' });
       for (const [t, inv] of Object.entries(db.invites)) if (inv.expires < Date.now()) delete db.invites[t];
       if (m === 'GET' && p === '/api/invites') {
-        return json(res, 200, Object.entries(db.invites).map(([token, inv]) => ({ token, role: inv.role, expires: inv.expires, url: `${baseUrl(req)}/invite/${token}` })));
+        return json(res, 200, Object.entries(db.invites).filter(([, inv]) => inv.workspaceId === user.workspaceId).map(([token, inv]) => ({ token, role: inv.role, expires: inv.expires, url: `${baseUrl(req)}/invite/${token}` })));
       }
       if (m === 'POST' && p === '/api/invites') {
+        if (!planOf(wsOf(user)).team) return json(res, 402, { error: 'Upgrade to add teammates.', upgrade: true });
         const body = await readJson(req);
         const token = crypto.randomBytes(18).toString('base64url');
-        db.invites[token] = { role: body.role === 'owner' ? 'owner' : 'member', createdBy: user.id, expires: Date.now() + 7 * 864e5 };
+        db.invites[token] = { role: body.role === 'owner' ? 'owner' : 'member', createdBy: user.id, workspaceId: user.workspaceId, expires: Date.now() + 7 * 864e5 };
         saveDb();
         return json(res, 200, { token, role: db.invites[token].role, expires: db.invites[token].expires, url: `${baseUrl(req)}/invite/${token}` });
       }
       if (m === 'DELETE' && (match = /^\/api\/invites\/([\w-]+)$/.exec(p))) {
-        delete db.invites[match[1]]; saveDb();
+        if (db.invites[match[1]] && db.invites[match[1]].workspaceId === user.workspaceId) delete db.invites[match[1]];
+        saveDb();
         return json(res, 200, { ok: true });
       }
     }
@@ -685,19 +870,13 @@ const server = http.createServer(async (req, res) => {
       if (m === 'GET' && p === '/api/users') {
         const counts = {};
         for (const v of Object.values(db.videos)) counts[v.ownerId] = (counts[v.ownerId] || 0) + 1;
-        return json(res, 200, Object.values(db.users)
+        return json(res, 200, Object.values(db.users).filter(u => u.workspaceId === user.workspaceId)
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
           .map(u => ({ ...publicUser(u), videos: counts[u.id] || 0 })));
       }
-      if (m === 'POST' && p === '/api/users') {
-        const body = await readJson(req);
-        const v = validateNewUser(body);
-        if (v.error) return json(res, 400, v);
-        return json(res, 200, publicUser(addUser(v, body.role === 'owner' ? 'owner' : 'member')));
-      }
       if ((match = /^\/api\/users\/([\w-]+)(\/password)?$/.exec(p))) {
         const target = db.users[match[1]];
-        if (!target) return json(res, 404, { error: 'Not found' });
+        if (!target || target.workspaceId !== user.workspaceId) return json(res, 404, { error: 'Not found' });
         if (m === 'POST' && match[2]) {
           const body = await readJson(req);
           if (String(body.password || '').length < 8) return json(res, 400, { error: 'Password must be at least 8 characters' });
@@ -708,6 +887,7 @@ const server = http.createServer(async (req, res) => {
         }
         if (m === 'DELETE') {
           if (target.id === user.id) return json(res, 400, { error: "You can't remove yourself" });
+          if (target.id === wsOf(user).ownerId) return json(res, 400, { error: "The workspace creator can't be removed" });
           // Their videos move to the owner doing the removal, so share links keep working
           for (const v of Object.values(db.videos)) if (v.ownerId === target.id) v.ownerId = user.id;
           endSessionsFor(target.id);
@@ -721,7 +901,7 @@ const server = http.createServer(async (req, res) => {
     if (m === 'GET' && p === '/api/videos') {
       const all = user.role === 'owner' && url.searchParams.get('scope') === 'all';
       const list = Object.values(db.videos)
-        .filter(v => all || v.ownerId === user.id)
+        .filter(v => v.workspaceId === user.workspaceId && (all || v.ownerId === user.id))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(publicVideo);
       return json(res, 200, list);
     }
@@ -753,6 +933,29 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Keeps each workspace's plan in step with Stripe
+async function handleStripeEvent(event) {
+  const o = event.data && event.data.object || {};
+  if (event.type === 'checkout.session.completed') {
+    const ws = db.workspaces[o.client_reference_id || (o.metadata || {}).workspace_id];
+    if (!ws) return;
+    ws.stripeCustomerId = o.customer || ws.stripeCustomerId;
+    if (o.subscription) {
+      ws.stripeSubId = o.subscription;
+      try { ws.subStatus = (await billing.getSubscription(o.subscription)).status; } catch (e) { ws.subStatus = 'active'; }
+    }
+    saveDb();
+  } else if (event.type.startsWith('customer.subscription.')) {
+    const ws = Object.values(db.workspaces).find(w => (o.metadata || {}).workspace_id === w.id) || Object.values(db.workspaces).find(w => w.stripeCustomerId && w.stripeCustomerId === o.customer);
+    if (!ws) return;
+    ws.stripeCustomerId = o.customer || ws.stripeCustomerId;
+    ws.stripeSubId = o.id;
+    ws.subStatus = event.type === 'customer.subscription.deleted' ? 'canceled' : o.status;
+    saveDb();
+    console.log(`Workspace "${ws.name}" is now ${planOf(ws).name} (${ws.subStatus}).`);
+  }
+}
+
 setInterval(() => {
   let changed = false;
   for (const [t, ses] of Object.entries(db.sessions)) if (ses.expires < Date.now()) { delete db.sessions[t]; changed = true; }
@@ -774,6 +977,7 @@ async function start() {
       process.exit(1);
     }
   }
+  migrateWorkspaces();
   applyOwnerEmail();
   // Pick up videos that were still being processed when the server last stopped
   for (const v of Object.values(db.videos)) if (v.status === 'processing') enqueue(v.id);
@@ -795,6 +999,7 @@ function listen() { server.listen(PORT, () => {
   console.log(`${APP_NAME} running at http://localhost:${PORT}`);
   console.log(HAS_FFMPEG ? 'ffmpeg found: videos will be converted to mp4 with thumbnails.' : 'ffmpeg not found: videos are kept as recorded (install ffmpeg for mp4 + thumbnails).');
   console.log(mailReady() ? 'Email verification is on.' : 'Email sending is not set up, so self sign up stays off.');
+  console.log(billing.billingReady() ? 'Stripe payments are on.' : 'Stripe is not set up, so everyone stays on their current plan.');
   console.log(storage.enabled ? 'Videos and data are saved to cloud storage.' : 'Videos and data are saved on this computer in ' + DATA_DIR);
   if (!hasUsers()) console.log(`First time? Open http://localhost:${PORT} to create your owner account${OWNER_EMAIL ? ' with ' + OWNER_EMAIL : ''}.`);
 }); }

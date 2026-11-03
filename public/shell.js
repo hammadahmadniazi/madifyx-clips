@@ -1,5 +1,8 @@
 // Shared helpers: icons, sidebar, toasts, small utilities.
 const ICONS = {
+  shield: '<path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6z"/><path d="m9 12 2 2 4-4"/>',
+  card: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3"/>',
+  spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
   film: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7.5 4.5v15M16.5 4.5v15M3 9.5h4.5M3 14.5h4.5M16.5 9.5H21M16.5 14.5H21"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   library: '<rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M10.2 9.4v5.2l4.3-2.6z"/>',
@@ -44,6 +47,8 @@ function ago(iso) {
   if (s < 86400 * 7) { const d = Math.floor(s / 86400); return d === 1 ? 'yesterday' : d + ' days ago'; }
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
 }
+// "5 minutes", "90 seconds" or "1:30" for a recording limit
+function limitLabel(sec) { return sec % 60 === 0 ? `${sec / 60} minute${sec === 60 ? '' : 's'}` : sec < 60 ? `${sec} seconds` : fmtDur(sec); }
 const AVATAR_COLORS = ['linear-gradient(135deg,#00C3FF,#0077B6)', 'linear-gradient(135deg,#00C8D7,#00897B)', 'linear-gradient(135deg,#8B7CFF,#5B3FD6)', 'linear-gradient(135deg,#FFB547,#E07A12)', 'linear-gradient(135deg,#FF6B8A,#C2255C)', 'linear-gradient(135deg,#4ADE80,#15803D)', 'linear-gradient(135deg,#60A5FA,#2563EB)'];
 function avatar(name, size = '') {
   name = String(name || '?').trim();
@@ -90,6 +95,7 @@ function renderShell(active) {
       <a href="/" class="${active === 'library' ? 'active' : ''}" data-tip="Library">${icon('library')}<span>Library</span></a>
       <button class="rail-rec" id="newVideo" data-tip="New video" aria-label="New video">${icon('camera')}</button>
       <a href="/team" class="${active === 'team' ? 'active' : ''}" data-tip="Team" id="teamLink">${icon('team')}<span>Team</span></a>
+      <a href="/admin" class="hidden rail-admin ${active === 'admin' ? 'active' : ''}" data-tip="Admin" id="adminLink">${icon('shield')}<span>Admin</span></a>
     </nav>`;
   const main = document.querySelector('.main');
   main.insertAdjacentHTML('afterbegin', `
@@ -98,6 +104,7 @@ function renderShell(active) {
       <label class="tsearch"><span class="hidden">Search</span>${icon('search')}
         <input id="search" type="search" placeholder="Search videos and people" autocomplete="off"></label>
       <div class="tright">
+        <button class="btn upg hidden" id="upgradeTop">${icon('spark')}<span>Upgrade</span></button>
         <button class="btn primary newv" id="newVideo2"><span class="dot"></span><span>New video</span></button>
         <div class="avwrap"><button class="avbtn" id="avBtn" aria-haspopup="menu" aria-label="Your account"></button></div>
       </div>
@@ -112,6 +119,8 @@ function renderShell(active) {
     window.ME = me;
     const label = me.role === 'owner' ? 'Team' : 'Account';
     $('teamLink').dataset.tip = label; $('teamLink').querySelector('span').textContent = label;
+    if (me.isAdmin) $('adminLink').classList.remove('hidden');
+    if (me.workspace.plan === 'free') { $('upgradeTop').classList.remove('hidden'); $('upgradeTop').onclick = () => showUpgrade(); }
     $('avBtn').innerHTML = avatar(me.name);
     $('avBtn').onclick = e => {
       e.stopPropagation();
@@ -119,13 +128,52 @@ function renderShell(active) {
       const m = document.createElement('div');
       m.className = 'menu avmenu'; m.setAttribute('role', 'menu');
       m.innerHTML = `<div class="avhead">${avatar(me.name, 'lg')}<div><div class="nm"></div><div class="em"></div></div></div>
+        <div class="avws"><span></span><b class="plan-badge ${me.workspace.plan}">${esc(me.workspace.planName)}</b></div>
         <a role="menuitem" href="/team">${icon('team')} ${me.role === 'owner' ? 'Team and settings' : 'Account settings'}</a>
+        ${me.role === 'owner' ? `<a role="menuitem" href="/team#billing">${icon('card')} Plan and billing</a>` : ''}
+        ${me.isAdmin ? `<a role="menuitem" href="/admin">${icon('shield')} Admin</a>` : ''}
         <a role="menuitem" href="/logout">${icon('logout')} Sign out</a>`;
       m.querySelector('.nm').textContent = me.name; m.querySelector('.em').textContent = me.email;
+      m.querySelector('.avws span').textContent = me.workspace.name;
       $('avBtn').parentElement.appendChild(m);
     };
     document.addEventListener('click', e => { const m = document.querySelector('.avmenu'); if (m && !m.contains(e.target)) m.remove(); });
     return me;
   });
   return window.meReady;
+}
+
+// ---------- plans ----------
+const PAID_PERKS = ['Unlimited videos', 'Record as long as you like', 'Invite your teammates', 'Your workspace name on share pages instead of Madifyx'];
+
+async function startCheckout(btn) {
+  const me = window.ME || await window.meReady;
+  if (me.role !== 'owner') { toast('Ask your workspace admin to upgrade'); return; }
+  if (!me.billing.ready) { toast('Payments are not available yet'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening secure checkout'; }
+  try { const r = await api('/api/billing/checkout', 'POST', {}); location.href = r.url; }
+  catch (e) { alert(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Upgrade now'; } }
+}
+
+// Pop-up that explains what upgrading unlocks. `reason` is a short sentence shown on top.
+async function showUpgrade(reason) {
+  const me = window.ME || await window.meReady;
+  document.querySelectorAll('dialog.upgrade').forEach(d => d.remove());
+  const d = document.createElement('dialog');
+  d.className = 'upgrade';
+  const owner = me.role === 'owner';
+  d.innerHTML = `<div class="dlg-body up-body">
+    <button class="btn ghost icon up-x" aria-label="Close">${icon('x')}</button>
+    <div class="up-badge">${icon('spark')} Pro</div>
+    <h2>${reason ? esc(reason) : 'Get more from Madifyx Clips'}</h2>
+    <ul class="up-perks">${PAID_PERKS.map(p => `<li>${icon('check')}${esc(p)}</li>`).join('')}</ul>
+    ${me.billing.price ? `<div class="up-price"><span class="num">${esc(me.billing.price.split('/')[0])}</span> per ${esc(me.billing.price.split('/')[1])} for your whole workspace</div>` : ''}
+    ${owner ? `<button class="btn primary block up-go">Upgrade now</button><p class="up-note">Secure checkout by Stripe. Cancel any time.</p>`
+            : `<p class="up-note">Only your workspace admin can upgrade. Let them know you need more.</p>`}
+  </div>`;
+  document.body.appendChild(d);
+  d.querySelector('.up-x').onclick = () => d.close();
+  d.addEventListener('close', () => d.remove());
+  const go = d.querySelector('.up-go'); if (go) go.onclick = () => startCheckout(go);
+  d.showModal();
 }

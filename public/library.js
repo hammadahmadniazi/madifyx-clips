@@ -5,8 +5,25 @@
   let pollTimer;
 
   renderShell('library').then(me => {
-    if (me.role === 'owner') $('teamTab').classList.remove('hidden');
+    if (me.role === 'owner' && me.workspace.limits.team) $('teamTab').classList.remove('hidden');
+    planBar();
   });
+
+  // Free plan: show how much is used, with a way to upgrade
+  function planBar() {
+    const me = window.ME; if (!me) return;
+    const ws = me.workspace;
+    if (ws.plan !== 'free') { $('planbar').classList.add('hidden'); return; }
+    const used = scope === 'mine' ? Math.max(videos.length, 0) : ws.usage.videos;
+    const max = ws.limits.maxVideos, pct = Math.min(100, Math.round(used / max * 100));
+    $('planbar').classList.remove('hidden');
+    $('planbar').classList.toggle('full', used >= max);
+    $('planbar').innerHTML = `<div class="pb-text"><b>Free plan</b><span>${used >= max ? 'You have used all your free videos.' : `<span class="num">${used}</span> of <span class="num">${max}</span> videos, up to <span class="num">${limitLabel(ws.limits.maxSeconds)}</span> each.`}</span></div>
+      <div class="pb-meter"><div style="width:${pct}%"></div></div>
+      <button class="btn sm primary" id="pbUp">${icon('spark')} Upgrade</button>`;
+    $('pbUp').onclick = () => showUpgrade();
+  }
+  window.refreshPlanBar = planBar;
 
   function card(v) {
     const thumb = v.thumb
@@ -42,6 +59,7 @@
     $('empty').classList.toggle('hidden', videos.length > 0);
     $('noMatch').classList.toggle('hidden', !(videos.length && !list.length));
     $('grid').innerHTML = list.map(card).join('');
+    planBar();
   }
 
   function renderStats() {

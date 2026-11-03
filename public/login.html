@@ -75,7 +75,7 @@
     <div class="err hidden" id="err" role="alert"></div>
     <button class="btn primary block" style="height:46px" id="submit">Sign in</button>
     <p class="muted hidden" id="foot" style="font-size:13px;margin:0">Forgot your password? Ask your admin to set a new one.</p>
-    <p class="switchline hidden" id="toSignup">New to the team? <a href="/signup">Create an account</a></p>
+    <p class="switchline hidden" id="toSignup">New here? <a href="/signup">Create a free account</a></p>
     <p class="switchline hidden" id="resendLine">No email? Check spam, or <a href="#" id="resend">send a new code</a></p>
     <p class="switchline hidden" id="toLogin">Already have an account? <a href="/login">Sign in</a></p>
   </form>
@@ -98,22 +98,22 @@ if (MODE === 'setup') {
   document.title = document.title.replace('Sign in', 'Set up');
 } else if (MODE === 'invite') {
   $('heading').textContent = 'Join Madifyx Clips';
-  $('lead').textContent = "You've been invited to Madifyx Clips. Create your account to start recording.";
+  $('lead').textContent = "You've been invited to a team on Madifyx Clips. Create your account to start recording.";
   show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
   $('submit').textContent = 'Create account and join';
   endpoint = '/api' + location.pathname;
   document.title = document.title.replace('Sign in', 'Join');
 } else if (MODE === 'signup') {
-  $('heading').textContent = 'Create your account';
-  $('lead').textContent = 'Join the Madifyx team and start recording.';
+  $('heading').textContent = 'Create your free account';
+  $('lead').textContent = 'Record your screen and camera, then share a link. No card needed.';
   show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
   $('submit').textContent = 'Create account';
   endpoint = '/api/signup';
   show('toLogin');
   document.title = document.title.replace('Sign in', 'Sign up');
 } else if (MODE === 'closed') {
-  $('heading').textContent = 'Sign ups are closed';
-  $('lead').textContent = 'Ask your admin to switch sign ups on, or to send you an invite link.';
+  $('heading').textContent = 'Sign ups are paused';
+  $('lead').textContent = "We're not taking new accounts right now. If your team uses Madifyx Clips, ask them for an invite link.";
   ['emailField', 'pwField'].forEach(id => show(id, false));
   $('submit').textContent = 'Go to sign in';
   $('form').onsubmit = e => { e.preventDefault(); location.href = '/login'; };

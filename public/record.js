@@ -6,7 +6,7 @@
     cam: null, mic: null, screen: null, mixed: null, audioCtx: null, meterCtx: null,
     recorder: null, chunks: [], blob: null, mime: '', duration: 0,
     startedAt: 0, pausedTotal: 0, pausedAt: 0, timer: null, discard: false, raf: null,
-    floatWin: null, noDocPip: false, starting: false, facing: 'user', uploadTitle: '',
+    floatWin: null, noDocPip: false, starting: false, facing: 'user', uploadTitle: '', maxSeconds: null,
   };
   const dlg = $('recorder');
 
@@ -101,6 +101,18 @@
       return;
     }
     if (S.recorder && S.recorder.state !== 'inactive') return;
+    // Plan limits: check before recording so nobody loses a take
+    let me;
+    try { me = await api('/api/me'); window.ME = me; } catch (e) { return; }
+    const lim = me.workspace.limits;
+    if (lim.maxVideos !== null && me.workspace.usage.videos >= lim.maxVideos) {
+      showUpgrade(`You've used all ${lim.maxVideos} free videos`);
+      return;
+    }
+    S.maxSeconds = lim.maxSeconds;
+    $('limitNote').classList.toggle('hidden', !S.maxSeconds);
+    if (S.maxSeconds) $('limitNote').innerHTML = `Free plan: up to <b>${limitLabel(S.maxSeconds)}</b> per video. <a href="#" id="limitUp">Upgrade</a> for no limit.`;
+    const lu = $('limitUp'); if (lu) lu.onclick = e => { e.preventDefault(); closeRecorder(); showUpgrade(); };
     try { S.mode = localStorage.getItem('clips.mode') || 'screencam'; } catch (e) {}
     const canScreen = !isPhone();
     dlg.classList.toggle('phone', !canScreen);
@@ -142,7 +154,12 @@
     S.duration = 0;
     const probe = document.createElement('video');
     probe.preload = 'metadata';
-    probe.onloadedmetadata = () => { if (isFinite(probe.duration)) S.duration = probe.duration; URL.revokeObjectURL(probe.src); upload(); };
+    probe.onloadedmetadata = () => {
+      if (isFinite(probe.duration)) S.duration = probe.duration;
+      URL.revokeObjectURL(probe.src);
+      if (S.maxSeconds && S.duration > S.maxSeconds + 1) toast(`Free plan: only the first ${limitLabel(S.maxSeconds)} are kept`);
+      upload();
+    };
     probe.onerror = () => upload();
     probe.src = URL.createObjectURL(file);
   };
@@ -277,7 +294,14 @@
     return (Date.now() - S.startedAt - S.pausedTotal - (S.pausedAt ? Date.now() - S.pausedAt : 0)) / 1000;
   }
   function tick() {
-    const t = fmtDur(elapsed());
+    const secs = elapsed();
+    // Free plan: stop automatically at the limit, and show the time left near the end
+    if (S.maxSeconds && secs >= S.maxSeconds && S.recorder && S.recorder.state === 'recording') {
+      toast(`Free plan recordings stop at ${limitLabel(S.maxSeconds)}`);
+      finishRecording(false);
+      return;
+    }
+    const t = S.maxSeconds && S.maxSeconds - secs <= 60 ? `${fmtDur(secs)} / ${fmtDur(S.maxSeconds)}` : fmtDur(secs);
     bars().forEach(b => { b.querySelector('[data-timer]').textContent = t; });
     document.title = (S.pausedAt ? 'Paused ' : 'Recording ') + t;
   }
@@ -336,6 +360,10 @@
         const link = location.origin + res.url;
         navigator.clipboard?.writeText(link).catch(() => {});
         location.href = res.url + '?new=1';
+      } else if (xhr.status === 402) {
+        let msg = 'Upgrade to save more videos.';
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
+        fail(msg); showUpgrade("You've reached the Free plan limit");
       } else fail(xhr.status === 401 ? 'You were signed out. Download a copy so nothing is lost, then sign in again.' : `The server said no (error ${xhr.status}). Try again or download a copy.`);
     };
     xhr.onerror = () => fail('The upload stopped. Check your internet connection and try again.');

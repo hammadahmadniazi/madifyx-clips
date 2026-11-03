@@ -30,6 +30,30 @@ Shortcuts while recording (with the app tab focused): Alt+Shift+P pause, Alt+Shi
 - Video pages (`/v/...`) never need a login.
 - Forgot the admin password? Stop the app and run: `node reset-password.js you@email.com newpassword`
 
+## Plans and payments (Stripe)
+
+Anyone can sign up at `/signup` and gets their **own private workspace** on the Free plan. Workspaces never see each other's people or videos.
+
+| | Free | Pro (paid, flat monthly price) |
+|---|---|---|
+| Videos | 25 per workspace | Unlimited |
+| Recording length | 5 minutes | No limit |
+| Teammates | Just you | Invite links and a team join link |
+| Share pages | "Recorded with Madifyx Clips" | Your workspace name instead |
+
+- Your own workspace (and anyone you choose) is **Free forever**: everything included at no cost. Switch it on per workspace on the **Admin** page, which only the `OWNER_EMAIL` account can open.
+- Upgrades go through **Stripe Checkout**; customers manage or cancel in the **Stripe Customer Portal** (Manage billing). A signed webhook keeps plans in sync.
+- If a subscription ends, the workspace returns to Free: nothing is deleted, but they can't add more than the free limits.
+
+**Stripe setup**
+1. In Stripe, create a **Product** (for example "Madifyx Clips Pro") with a **recurring monthly price**. Copy the price ID (`price_...`).
+2. **Developers > API keys**: copy the **Secret key** (`sk_live_...`, or `sk_test_...` while testing).
+3. **Developers > Webhooks > Add endpoint**: URL `https://record.madifyx.com/api/stripe/webhook`, events `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`. Copy the **Signing secret** (`whsec_...`).
+4. **Settings > Billing > Customer portal**: save the settings once so customers can manage and cancel.
+5. Add `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` and `STRIPE_WEBHOOK_SECRET` in Render.
+
+Free plan limits can be changed with `FREE_MAX_VIDEOS` and `FREE_MAX_SECONDS`.
+
 ## Run it on your computer
 
 Needs Node.js 18 or newer, nothing else to install. ffmpeg is optional but recommended (on Mac: `brew install ffmpeg`, on Windows: `winget install ffmpeg`).
@@ -104,6 +128,12 @@ To update later: copy the new files over and run the same `docker compose up -d 
 | `OWNER_EMAIL` | (empty) | Only this email can set up the workspace, and it always has owner rights |
 | `RESEND_API_KEY` | (empty) | Resend key for sending verification emails |
 | `MAIL_FROM` | (empty) | Sender, e.g. `Madifyx Clips <clips@madifyx.com>` (the domain must be verified in Resend) |
+| `STRIPE_SECRET_KEY` | (empty) | Stripe secret key |
+| `STRIPE_PRICE_ID` | (empty) | The monthly price customers pay for Pro |
+| `STRIPE_WEBHOOK_SECRET` | (empty) | Signing secret of the Stripe webhook |
+| `FREE_MAX_VIDEOS` | 25 | Videos allowed per workspace on the Free plan |
+| `FREE_MAX_SECONDS` | 300 | Longest recording on the Free plan, in seconds |
+| `HOME_WORKSPACE_NAME` | Madifyx | Name of your own (free forever) workspace |
 | `MAIL_DEV` | (empty) | Set to 1 on your own computer to print emails in the terminal instead of sending them |
 | `MAX_UPLOAD_MB` | 2048 | Largest upload allowed |
 | `KEEP_ORIGINAL` | 0 | Set to 1 to keep the raw recording after mp4 conversion |
