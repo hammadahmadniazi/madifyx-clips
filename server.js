@@ -550,6 +550,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { views: v.views });
     }
     if (m === 'GET' && p === '/api/config') return json(res, 200, { appName: APP_NAME, ffmpeg: HAS_FFMPEG });
+    // Plans shown on the public homepage
+    if (m === 'GET' && p === '/api/pricing') {
+      return json(res, 200, { price: await billing.priceLabel(), signupOpen: signupOpen(),
+        free: { maxVideos: PLANS.free.maxVideos, maxSeconds: PLANS.free.maxSeconds } });
+    }
 
     // ---------- comments and reactions (anyone with the link) ----------
     if ((match = /^\/api\/videos\/([\w-]+)\/comments(?:\/([\w-]+))?$/.exec(p))) {
@@ -719,10 +724,14 @@ const server = http.createServer(async (req, res) => {
     const user = currentUser(req);
     if (!user) {
       if (p.startsWith('/api/')) return json(res, 401, { error: 'Please sign in' });
+      // Visitors who aren't signed in see the public homepage
+      if (m === 'GET' && (p === '/' || p === '/pricing' || p === '/home') && hasUsers()) return send(res, 200, page('home.html', { OG_URL: escapeHtml(baseUrl(req) + '/'), OG_IMAGE: escapeHtml(baseUrl(req) + '/static/brand/logo.png') }), MIME['.html']);
       return redirect(res, hasUsers() ? '/login' : '/setup');
     }
 
     if (m === 'GET' && p === '/') return send(res, 200, page('app.html'), MIME['.html']);
+    if (m === 'GET' && p === '/pricing') return redirect(res, '/team#billing');
+    if (m === 'GET' && p === '/home') return send(res, 200, page('home.html', { OG_URL: escapeHtml(baseUrl(req) + '/'), OG_IMAGE: escapeHtml(baseUrl(req) + '/static/brand/logo.png') }), MIME['.html']);
     if (m === 'GET' && p === '/team') return send(res, 200, page('team.html'), MIME['.html']);
     if (m === 'GET' && p === '/admin') return isPlatformAdmin(user) ? send(res, 200, page('admin.html'), MIME['.html']) : redirect(res, '/');
     if (m === 'GET' && (p === '/library' || p === '/account' || p === '/record')) return redirect(res, p === '/account' ? '/team' : p === '/record' ? '/?record=1' : '/');
