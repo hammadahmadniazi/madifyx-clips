@@ -135,6 +135,7 @@ To update later: copy the new files over and run the same `docker compose up -d 
 | `FREE_MAX_SECONDS` | 300 | Longest recording on the Free plan, in seconds |
 | `HOME_WORKSPACE_NAME` | Madifyx | Name of your own (free forever) workspace |
 | `SUPPORT_EMAIL` | the `OWNER_EMAIL` | Contact address shown on the Terms and Privacy pages |
+| `NOTIFY_EMAIL` | the `OWNER_EMAIL` | Where new sign up alerts go. Set to `off` to stop them |
 | `LEGAL_JURISDICTION` | the State of Florida, United States | Governing law named in the Terms of Service |
 | `MAIL_DEV` | (empty) | Set to 1 on your own computer to print emails in the terminal instead of sending them |
 | `MAX_UPLOAD_MB` | 2048 | Largest upload allowed |

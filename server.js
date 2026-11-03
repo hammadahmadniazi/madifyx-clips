@@ -465,7 +465,30 @@ function finishVerification(req, res, pend) {
   if (pend.email === OWNER_EMAIL && user.workspaceId === db.settings.homeWorkspace) user.role = 'owner';
   saveDb();
   createSession(req, res, user);
+  notifyNewSignup(req, user, !wsId).catch(e => console.log('[signup alert] not sent:', e.message));
   return { user };
+}
+
+// Emails the owner when someone new finishes signing up. Set NOTIFY_EMAIL to send it somewhere else, or "off" to stop.
+async function notifyNewSignup(req, user, ownWorkspace) {
+  const to = String(process.env.NOTIFY_EMAIL || OWNER_EMAIL || '').trim();
+  if (!to || to.toLowerCase() === 'off' || user.email === OWNER_EMAIL || !mailReady()) return;
+  const ws = db.workspaces[user.workspaceId];
+  const how = ownWorkspace ? 'Started a new workspace on the Free plan' : `Joined the team "${ws ? ws.name : 'unknown'}"`;
+  const total = Object.keys(db.users).length;
+  const admin = `${baseUrl(req)}/admin`;
+  const e = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const row = (k, v) => `<tr><td style="padding:6px 0;color:#7D8597;font-size:14px;width:110px;">${k}</td><td style="padding:6px 0;color:#F4F6FA;font-size:14px;">${e(v)}</td></tr>`;
+  const text = `New sign up on ${APP_NAME}\n\nName: ${user.name}\nEmail: ${user.email}\nHow: ${how}\nTotal people now: ${total}\n\nSee everyone: ${admin}`;
+  const html = `<!doctype html><html><body style="margin:0;background:#07080D;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#0F111A;border:1px solid #1F2333;border-radius:18px;"><tr><td style="padding:28px 30px;">
+<div style="color:#00C3FF;font-size:11px;letter-spacing:.24em;font-weight:700;">MADIFYX CLIPS</div>
+<div style="color:#FFFFFF;font-size:21px;font-weight:800;margin:8px 0 16px;">New sign up</div>
+<table role="presentation" cellpadding="0" cellspacing="0">${row('Name', user.name)}${row('Email', user.email)}${row('How', how)}${row('Total people', String(total))}</table>
+<div style="margin-top:22px;"><a href="${e(admin)}" style="display:inline-block;background:#00C3FF;color:#021018;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:11px;">Open Admin</a></div>
+</td></tr></table></td></tr></table></body></html>`;
+  await sendMail({ to, subject: `New sign up: ${user.name} (${user.email})`, html, text });
 }
 
 // ---------- upload ----------
