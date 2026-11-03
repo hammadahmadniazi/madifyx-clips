@@ -305,6 +305,38 @@ body.float .fcam { width: 190px; height: 190px; border-radius: 50%; overflow: hi
 body.float .fcam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 body.float .recbar { position: static; transform: none; box-shadow: none; padding: 6px 6px 6px 14px; }
 
+/* ---------- uploads, camera flip and phone recording ---------- */
+.upload { margin-top: 10px; height: 44px; color: var(--ink-2); }
+.upload svg.i { width: 17px; height: 17px; }
+.flip { display: none; position: absolute; top: 12px; right: 12px; z-index: 2; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .25); background: rgba(7, 8, 13, .55); color: #fff; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+video.unmirror { transform: none !important; }
+.live { position: fixed; inset: 0; z-index: 55; background: #000; }
+.live video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+@media (min-width: 861px) { .live video { object-fit: contain; } }
+.live-badge { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; background: rgba(7, 8, 13, .6); color: #fff; font: 600 12px var(--mono); letter-spacing: .08em; backdrop-filter: blur(8px); }
+.live-badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--rec); box-shadow: 0 0 10px var(--rec); animation: pulse 1.2s infinite; }
+.recbar { padding-bottom: 8px; }
+
+/* Phones: the recorder becomes a full screen camera sheet */
+dialog.phone .flip { display: inline-flex; }
+dialog.phone .modes { display: none; }
+dialog.phone .stage { margin-top: 6px; }
+dialog.phone #camDev, dialog.phone #sysRow { display: none !important; }
+dialog.phone .devices { grid-template-columns: 1fr; }
+@media (max-width: 860px) {
+  dialog { width: 100vw; max-width: 100vw; max-height: 100dvh; margin: auto 0 0; border-radius: 22px 22px 0 0; }
+  dialog#recorder { height: 100dvh; max-height: 100dvh; border-radius: 0; margin: 0; }
+  dialog#recorder .dlg-body { padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; height: calc(100dvh - 62px); }
+  dialog#recorder .dlg-head { padding: calc(14px + env(safe-area-inset-top)) 16px 0; }
+  dialog#recorder .stage { flex: 1; height: auto; min-height: 240px; margin: 14px 0 12px; }
+  dialog#recorder .tip { display: none; }
+  .recbar { bottom: calc(18px + env(safe-area-inset-bottom)); }
+  .recbar button { height: 46px; }
+  .recbar .icon-only { width: 46px; }
+  .countdown span { width: 130px; height: 130px; font-size: 62px; }
+  .vid .tools .btn.sm:first-child { padding: 0 10px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

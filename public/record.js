@@ -6,7 +6,7 @@
     cam: null, mic: null, screen: null, mixed: null, audioCtx: null, meterCtx: null,
     recorder: null, chunks: [], blob: null, mime: '', duration: 0,
     startedAt: 0, pausedTotal: 0, pausedAt: 0, timer: null, discard: false, raf: null,
-    floatWin: null, noDocPip: false, starting: false,
+    floatWin: null, noDocPip: false, starting: false, facing: 'user', uploadTitle: '',
   };
   const dlg = $('recorder');
 
@@ -14,6 +14,8 @@
   const stop = s => s && s.getTracks().forEach(t => t.stop());
   const usesScreen = () => S.mode !== 'cam';
   const usesCam = () => S.mode !== 'screen';
+  // Phones and tablets can't share their screen in a browser, so they get the camera recorder
+  const isPhone = () => !navigator.mediaDevices?.getDisplayMedia || (matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820);
   function pickMime() {
     return ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4;codecs=avc1,mp4a', 'video/mp4']
       .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
@@ -41,10 +43,12 @@
     if (!want) return;
     try {
       const id = $('camSelect').value;
-      S.cam = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: id ? { exact: id } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
-      });
+      const video = isPhone()
+        ? { facingMode: S.facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+        : { deviceId: id ? { exact: id } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+      S.cam = await navigator.mediaDevices.getUserMedia({ video });
       $('camPreview').srcObject = S.cam;
+      $('camPreview').classList.toggle('unmirror', S.facing === 'environment');
     } catch (e) {
       console.warn('Camera unavailable', e);
       $('camBox').classList.add('hidden');
@@ -98,8 +102,9 @@
     }
     if (S.recorder && S.recorder.state !== 'inactive') return;
     try { S.mode = localStorage.getItem('clips.mode') || 'screencam'; } catch (e) {}
-    // Phones and tablets can't share their screen, so only camera mode is offered there
-    const canScreen = !!navigator.mediaDevices.getDisplayMedia;
+    const canScreen = !isPhone();
+    dlg.classList.toggle('phone', !canScreen);
+    $('recTitle').textContent = canScreen ? 'New recording' : 'Record with your camera';
     dlg.querySelectorAll('.mode').forEach(b => { if (b.dataset.mode !== 'cam') b.classList.toggle('hidden', !canScreen); });
     dlg.querySelector('.modes').style.gridTemplateColumns = canScreen ? '' : '1fr';
     if (!canScreen) S.mode = 'cam';
@@ -122,6 +127,25 @@
   $('recClose').onclick = closeRecorder;
   dlg.querySelectorAll('.mode').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; applyMode(); startCam(); });
   $('camSelect').onchange = startCam;
+  $('flipCam').onclick = () => { S.facing = S.facing === 'user' ? 'environment' : 'user'; startCam(); };
+
+  // Upload a video file (camera roll on phones, any file on computers)
+  $('uploadBtn').onclick = () => $('fileInput').click();
+  $('fileInput').onchange = () => {
+    const file = $('fileInput').files[0];
+    $('fileInput').value = '';
+    if (!file) return;
+    if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|m4v)$/i.test(file.name)) { toast('Choose a video file'); return; }
+    closeRecorder();
+    S.uploadTitle = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 200);
+    S.blob = file.type ? file : new Blob([file], { type: 'video/mp4' });
+    S.duration = 0;
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => { if (isFinite(probe.duration)) S.duration = probe.duration; URL.revokeObjectURL(probe.src); upload(); };
+    probe.onerror = () => upload();
+    probe.src = URL.createObjectURL(file);
+  };
   $('micSelect').onchange = startMic;
 
   // ---------- recording controls (page bar + floating window) ----------
@@ -225,6 +249,13 @@
     S.starting = true;
     closeRecorder();
     cancelAnimationFrame(S.raf);
+    if (S.mode === 'cam') {
+      // Show yourself full screen while recording on camera
+      $('livePreview').srcObject = S.cam;
+      $('livePreview').classList.toggle('unmirror', S.facing === 'environment');
+      $('live').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
     await countdown();
 
     S.mime = pickMime();
@@ -272,6 +303,7 @@
     clearInterval(S.timer);
     document.title = 'Library';
     $('recbar').classList.add('hidden');
+    $('live').classList.add('hidden'); $('livePreview').srcObject = null; document.body.style.overflow = '';
     closeFloat();
     stop(S.screen); S.screen = null;
     stop(S.cam); S.cam = null;
@@ -280,6 +312,7 @@
     S.recorder = null;
     if (S.discard) { toast('Recording discarded'); return; }
     S.blob = new Blob(S.chunks, { type: (S.mime || 'video/webm').split(';')[0] });
+    S.uploadTitle = '';
     upload();
   }
 
@@ -291,7 +324,7 @@
     $('upText').textContent = 'This takes a few seconds. Keep this tab open.';
     $('upActions').classList.add('hidden');
     $('upBar').style.width = '0';
-    const qs = new URLSearchParams({ title: 'Untitled video ' + new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), duration: String(S.duration || '') });
+    const qs = new URLSearchParams({ title: S.uploadTitle || 'Untitled video ' + new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), duration: String(S.duration || '') });
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/videos?' + qs);
     xhr.setRequestHeader('Content-Type', S.blob.type || 'video/webm');

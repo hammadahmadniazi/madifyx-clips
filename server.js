@@ -148,7 +148,7 @@ async function processVideo(id) {
     const mp4 = id + '.mp4';
     // Converting to mp4 makes the video seekable everywhere and play on iPhone/Safari.
     await runFfmpeg(['-i', input, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-threads', '2',
-      '-pix_fmt', 'yuv420p', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      '-pix_fmt', 'yuv420p', '-vf', "scale='min(iw,1920)':'min(ih,1920)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
       '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', localPath(mp4)]);
     const thumb = id + '.jpg';
     await runFfmpeg(['-ss', '1', '-i', localPath(mp4), '-frames:v', '1', '-vf', 'scale=640:-2', localPath(thumb)])
@@ -179,7 +179,7 @@ async function processVideo(id) {
 // ---------- small helpers (no external packages needed) ----------
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 
 function send(res, status, body, type = 'text/plain; charset=utf-8', extra = {}) {
@@ -379,7 +379,7 @@ const ownerName = () => { const o = Object.values(db.users).find(u => u.role ===
 // ---------- upload ----------
 function handleUpload(req, res, query, user) {
   const mime = String(req.headers['content-type'] || 'video/webm').split(';')[0];
-  const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+  const ext = mime.includes('mp4') || mime.includes('m4v') ? 'mp4' : mime.includes('quicktime') ? 'mov' : 'webm';
   const id = newId();
   const original = `${id}.orig.${ext}`;
   const dest = path.join(VIDEO_DIR, original);

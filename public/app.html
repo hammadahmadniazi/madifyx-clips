@@ -69,6 +69,7 @@
         You'll pick a screen, window or tab next
       </div>
       <div class="cam" id="camBox"><video id="camPreview" autoplay muted playsinline></video></div>
+      <button class="flip" id="flipCam" type="button" aria-label="Switch between front and back camera"><svg class="i" viewBox="0 0 24 24"><path d="M4 8.5h11.5l-3-3M20 15.5H8.5l3 3"/></svg></button>
     </div>
 
     <div class="devices">
@@ -93,6 +94,8 @@
     </div>
 
     <button class="btn block start" id="startBtn"><span class="ring"></span> Start recording</button>
+    <button class="btn block upload" id="uploadBtn" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 19.5h14"/></svg> Upload a video instead</button>
+    <input type="file" id="fileInput" accept="video/*" hidden>
     <div class="tip" id="tip">Share your entire screen so your camera bubble shows up in the video.</div>
   </div>
 </dialog>
@@ -122,6 +125,7 @@
   </form>
 </dialog>
 
+<div class="live hidden" id="live" aria-hidden="true"><video id="livePreview" autoplay muted playsinline></video><span class="live-badge"><i></i>REC</span></div>
 <div class="recbar hidden" id="recbar" role="toolbar" aria-label="Recording controls"></div>
 <div class="countdown hidden" id="countdown"></div>
 <video id="pipVideo" muted playsinline autoplay style="position:fixed;left:-10000px;top:0;width:320px;height:320px"></video>

@@ -5,7 +5,9 @@ Your own screen recorder with share links. Record your screen, voice and camera 
 ## What it does
 
 - **Library home page** with search, and a team view for admins
-- **Three ways to record:** screen and camera, screen only, or camera only (phones get camera only)
+- **Three ways to record:** screen and camera, screen only, or camera only
+- **On phones:** a full screen camera recorder with front/back camera flip (phone browsers can't share their screen)
+- **Upload a video** from your computer or camera roll instead of recording; large phone videos are resized to 1080p
 - **Floating controls** in Chrome and Edge: your camera bubble plus pause and finish stay on top of other apps
 - Microphone and computer sound mixed together, 3 second countdown, pause, discard
 - When you finish, it saves and opens the video's page with the link already copied

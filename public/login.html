@@ -126,7 +126,7 @@ if (MODE === 'setup') {
   $('form').onsubmit = e => { e.preventDefault(); location.href = '/login'; };
 } else {
   show('foot');
-  if (SIGNUP === '1') show('toSignup');
+  show('toSignup'); // the sign up page explains if sign ups are switched off
 }
 
 if (MODE !== 'expired' && MODE !== 'closed') {
