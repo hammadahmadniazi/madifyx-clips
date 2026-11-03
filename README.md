@@ -18,7 +18,10 @@ Shortcuts while recording (with the app tab focused): Alt+Shift+P pause, Alt+Shi
 ## Accounts
 
 - The first time you open the app, it asks you to set up the **admin account**. That's you.
-- Go to **Team** and click **Invite teammate**. Copy the link and send it to them. They create their own account with it. Each link works once and expires in 7 days.
+- Set `OWNER_EMAIL` so only that email can create the owner account. That email is always an owner, even if it joined some other way.
+- **Team join link:** on the Team page, switch on the join link and share it with your team. Anyone who opens it creates their own profile. Switch it off, or make a new link, whenever you like.
+- **One-time invites:** click **Invite teammate** for a private link that works once and expires in 7 days (it can also make someone an admin).
+- Everyone can change their own name and password on the Account page.
 - **Members** record and see their own videos. **Admins** also invite people and can switch the library to "Whole team".
 - Removing someone moves their videos to you, so their links keep working.
 - Video pages (`/v/...`) never need a login.
@@ -95,6 +98,7 @@ To update later: copy the new files over and run the same `docker compose up -d 
 | `APP_NAME` | Madifyx Clips | Name shown in the app |
 | `DATA_DIR` | ./data | Where videos, accounts and the database live |
 | `SESSION_DAYS` | 30 | How long people stay signed in |
+| `OWNER_EMAIL` | (empty) | Only this email can set up the workspace, and it always has owner rights |
 | `MAX_UPLOAD_MB` | 2048 | Largest upload allowed |
 | `KEEP_ORIGINAL` | 0 | Set to 1 to keep the raw recording after mp4 conversion |
 | `S3_ENDPOINT` | (empty) | Cloud storage address, e.g. your Cloudflare R2 endpoint. When the four S3 settings are set, videos and data are kept there |

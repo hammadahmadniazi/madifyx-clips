@@ -10,6 +10,8 @@ services:
     envVars:
       - key: APP_NAME
         value: Madifyx Clips
+      - key: OWNER_EMAIL
+        value: hammadahmad811@gmail.com
       - key: S3_ENDPOINT
         sync: false
       - key: S3_BUCKET

@@ -82,8 +82,8 @@ if (MODE === 'setup') {
   endpoint = '/api' + location.pathname;
   document.title = document.title.replace('Sign in', 'Join');
 } else if (MODE === 'expired') {
-  $('heading').textContent = 'This invite has expired';
-  $('lead').textContent = 'Invite links work once and last 7 days. Ask your admin for a new one.';
+  $('heading').textContent = "This link isn't active";
+  $('lead').textContent = 'It may have been used, switched off or replaced. Ask your admin for a new one.';
   ['emailField', 'pwField'].forEach(id => show(id, false));
   $('submit').textContent = 'Go to sign in';
   $('form').onsubmit = e => { e.preventDefault(); location.href = '/login'; };

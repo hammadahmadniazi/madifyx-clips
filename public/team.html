@@ -16,6 +16,13 @@
   .pending .p { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
   .pending .p span { flex: 1; }
   .msg { font-size: 13px; margin-top: 10px; }
+  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .switch span { width: 42px; height: 24px; border-radius: 999px; background: #D5D8DF; position: relative; transition: background .15s; }
+  .switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
+  .switch input:checked + span { background: var(--brand); }
+  .switch input:checked + span::after { transform: translateX(18px); }
+  .switch input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
   .msg.bad { color: #D4291A; } .msg.good { color: var(--ok); }
 </style>
 </head>
@@ -46,8 +53,29 @@
         <div class="pending" id="pending"></div>
       </section>
 
+      <section class="panel hidden" id="joinPanel">
+        <div class="panel-head">
+          <div><h2>Team join link</h2><p>One link for your whole team. Anyone who opens it creates their own profile as a member.</p></div>
+          <label class="switch"><input type="checkbox" id="joinToggle" role="switch"><span></span><b id="joinState">Off</b></label>
+        </div>
+        <div id="joinBox" class="hidden">
+          <div class="linkbox">
+            <input class="input" id="joinUrl" readonly aria-label="Team join link">
+            <button class="btn primary" id="copyJoin">Copy</button>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
+            <span class="muted" style="font-size:13px">Only share it with your team. Turn it off when everyone has joined.</span>
+            <button class="btn ghost sm" id="resetJoin">Make a new link</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel">
-        <div class="panel-head"><div><h2>Your account</h2><p id="meLine"></p></div></div>
+        <div class="panel-head"><div><h2>Your profile</h2><p id="meLine"></p></div></div>
+        <form id="nameForm" class="form-grid" style="grid-template-columns:1fr auto;margin-bottom:22px">
+          <label class="field"><span>Your name</span><input class="input" id="myName" required maxlength="80" autocomplete="name"></label>
+          <button class="btn">Save name</button>
+        </form>
         <form id="pwForm" class="form-grid">
           <label class="field"><span>Current password</span><input class="input" id="pCur" type="password" required autocomplete="current-password"></label>
           <label class="field"><span>New password</span><input class="input" id="pNew" type="password" required minlength="8" autocomplete="new-password" placeholder="8 or more characters"></label>
@@ -63,7 +91,17 @@
 <script>
 (async function () {
   const me = await renderShell('team');
-  $('meLine').textContent = `${me.name}, ${me.email}`;
+  $('meLine').textContent = me.email;
+  $('myName').value = me.name;
+  $('nameForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      const u = await api('/api/me', 'PATCH', { name: $('myName').value });
+      me.name = u.name;
+      document.querySelector('#me .nm').textContent = u.name;
+      toast('Name saved');
+    } catch (err) { alert(err.message); }
+  });
   $('inviteBtn').innerHTML = icon('plus') + ' Invite teammate';
 
   if (me.role !== 'owner') {
@@ -72,8 +110,25 @@
     document.title = document.title.replace('Team', 'Account');
   } else {
     $('teamPanel').classList.remove('hidden');
-    loadPeople(); loadInvites();
+    $('joinPanel').classList.remove('hidden');
+    loadPeople(); loadInvites(); showJoin(await api('/api/join-link'));
   }
+
+  function showJoin(j) {
+    $('joinToggle').checked = j.enabled;
+    $('joinState').textContent = j.enabled ? 'On' : 'Off';
+    $('joinBox').classList.toggle('hidden', !j.enabled);
+    $('joinUrl').value = j.url || '';
+  }
+  $('joinToggle').onchange = async () => {
+    showJoin(await api('/api/join-link', $('joinToggle').checked ? 'POST' : 'DELETE'));
+    toast($('joinToggle').checked ? 'Join link turned on' : 'Join link turned off');
+  };
+  $('copyJoin').onclick = () => copyText($('joinUrl').value, 'Join link copied');
+  $('resetJoin').onclick = async () => {
+    if (!confirm('Make a new link? The old one will stop working.')) return;
+    showJoin(await api('/api/join-link', 'POST')); toast('New join link ready');
+  };
 
   async function loadPeople() {
     const users = await api('/api/users');

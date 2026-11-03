@@ -9,6 +9,8 @@ const { storage } = require('./storage');
 const PORT = process.env.PORT || 3000;
 const APP_NAME = process.env.APP_NAME || 'Madifyx Clips';
 const SESSION_DAYS = Number(process.env.SESSION_DAYS || 30);
+// When set, only this email can create the owner account, and it is always an owner.
+const OWNER_EMAIL = String(process.env.OWNER_EMAIL || '').trim().toLowerCase();
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 2048);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const VIDEO_DIR = path.join(DATA_DIR, 'videos');
@@ -24,7 +26,7 @@ let db = { videos: {}, users: {}, sessions: {} };
 if (fs.existsSync(DB_FILE)) {
   try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { console.error('Could not read db.json', e); }
 }
-db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {};
+db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {};
 let saveTimer = null;
 function saveDb() {
   clearTimeout(saveTimer);
@@ -51,7 +53,13 @@ function pushDb(delay = 1500) {
     }, delay);
   });
 }
-function normalizeDb() { db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; }
+function normalizeDb() { db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; }
+// Make sure the owner email always has owner rights
+function applyOwnerEmail() {
+  if (!OWNER_EMAIL) return;
+  const u = Object.values(db.users).find(x => x.email === OWNER_EMAIL);
+  if (u && u.role !== 'owner') { u.role = 'owner'; saveDb(); console.log(`${OWNER_EMAIL} is now an owner.`); }
+}
 
 function newId() {
   let id;
@@ -452,8 +460,26 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const v = validateNewUser(body);
       if (v.error) return json(res, 400, v);
-      const user = addUser(v, inv.role === 'owner' ? 'owner' : 'member');
+      const user = addUser(v, inv.role === 'owner' || v.email === OWNER_EMAIL ? 'owner' : 'member');
       delete db.invites[match[1]]; saveDb();
+      createSession(req, res, user);
+      return json(res, 200, { ok: true });
+    }
+
+    // ---------- team join link (reusable, can be turned off) ----------
+    if ((match = /^\/join\/([\w-]+)$/.exec(p)) && m === 'GET') {
+      const ok = db.settings.joinCode && match[1] === db.settings.joinCode;
+      if (!ok) return send(res, 200, page('login.html', { MODE: 'expired', INVITER: '' }), MIME['.html']);
+      const owner = Object.values(db.users).find(u => u.role === 'owner');
+      return send(res, 200, page('login.html', { MODE: 'invite', INVITER: escapeHtml(owner ? owner.name : 'Your team') }), MIME['.html']);
+    }
+    if ((match = /^\/api\/join\/([\w-]+)$/.exec(p)) && m === 'POST') {
+      if (!db.settings.joinCode || match[1] !== db.settings.joinCode) return json(res, 410, { error: 'This join link is no longer active. Ask your admin for the new one.' });
+      if (limited('j:' + clientIp(req), 10, 60 * 60e3)) return json(res, 429, { error: 'Too many sign ups from here. Try again later.' });
+      const body = await readJson(req);
+      const v = validateNewUser(body);
+      if (v.error) return json(res, 400, v);
+      const user = addUser(v, v.email === OWNER_EMAIL ? 'owner' : 'member');
       createSession(req, res, user);
       return json(res, 200, { ok: true });
     }
@@ -468,6 +494,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const v = validateNewUser(body);
       if (v.error) return json(res, 400, v);
+      if (OWNER_EMAIL && v.email !== OWNER_EMAIL) return json(res, 403, { error: 'This workspace is reserved for its owner. Use the owner email to set it up.' });
       const user = addUser(v, 'owner');
       // Videos recorded before logins existed now belong to the owner
       for (const vid of Object.values(db.videos)) if (!vid.ownerId) vid.ownerId = user.id;
@@ -514,6 +541,24 @@ const server = http.createServer(async (req, res) => {
       endSessionsFor(user.id, parseCookies(req).sid);
       saveDb();
       return json(res, 200, { ok: true });
+    }
+
+    // Your profile
+    if (m === 'PATCH' && p === '/api/me') {
+      const body = await readJson(req);
+      const name = String(body.name || '').trim().slice(0, 80);
+      if (!name) return json(res, 400, { error: "Your name can't be empty" });
+      user.name = name; saveDb();
+      return json(res, 200, publicUser(user));
+    }
+
+    // Team join link (owner only)
+    if (p === '/api/join-link') {
+      if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can manage the join link' });
+      if (m === 'POST') { db.settings.joinCode = crypto.randomBytes(9).toString('base64url'); saveDb(); }
+      if (m === 'DELETE') { db.settings.joinCode = null; saveDb(); }
+      const code = db.settings.joinCode;
+      return json(res, 200, { enabled: !!code, url: code ? `${baseUrl(req)}/join/${code}` : null });
     }
 
     // Invites (owner only)
@@ -630,6 +675,7 @@ async function start() {
       process.exit(1);
     }
   }
+  applyOwnerEmail();
   // Pick up videos that were still being processed when the server last stopped
   for (const v of Object.values(db.videos)) if (v.status === 'processing') enqueue(v.id);
   listen();
@@ -648,5 +694,5 @@ function listen() { server.listen(PORT, () => {
   console.log(`${APP_NAME} running at http://localhost:${PORT}`);
   console.log(HAS_FFMPEG ? 'ffmpeg found: videos will be converted to mp4 with thumbnails.' : 'ffmpeg not found: videos are kept as recorded (install ffmpeg for mp4 + thumbnails).');
   console.log(storage.enabled ? 'Videos and data are saved to cloud storage.' : 'Videos and data are saved on this computer in ' + DATA_DIR);
-  if (!hasUsers()) console.log(`First time? Open http://localhost:${PORT} to create your owner account.`);
+  if (!hasUsers()) console.log(`First time? Open http://localhost:${PORT} to create your owner account${OWNER_EMAIL ? ' with ' + OWNER_EMAIL : ''}.`);
 }); }
