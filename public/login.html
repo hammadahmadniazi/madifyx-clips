@@ -35,6 +35,9 @@
   form h1 { font-size: 28px; }
   form .lead { color: var(--muted); margin: -8px 0 6px; }
   .err { color: #FF7A86; font-size: 14px; }
+  .switchline { margin: 2px 0 0; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); text-align: center; }
+  .switchline a { color: var(--brand-ink); font-weight: 600; }
+  .switchline a:hover { text-decoration: underline; }
   .mobile-logo { display: none; }
   @media (max-width: 900px) {
     body { grid-template-columns: 1fr; }
@@ -69,12 +72,15 @@
     <div class="err hidden" id="err" role="alert"></div>
     <button class="btn primary block" style="height:46px" id="submit">Sign in</button>
     <p class="muted hidden" id="foot" style="font-size:13px;margin:0">Forgot your password? Ask your admin to set a new one.</p>
+    <p class="switchline hidden" id="toSignup">New to the team? <a href="/signup">Create an account</a></p>
+    <p class="switchline hidden" id="toLogin">Already have an account? <a href="/login">Sign in</a></p>
   </form>
 </div>
 
 <script>
 const MODE = '{{MODE}}';
 const INVITER = '{{INVITER}}';
+const SIGNUP = '{{SIGNUP}}';
 const $ = x => document.getElementById(x);
 const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
 let endpoint = '/api/login';
@@ -93,6 +99,21 @@ if (MODE === 'setup') {
   $('submit').textContent = 'Create account and join';
   endpoint = '/api' + location.pathname;
   document.title = document.title.replace('Sign in', 'Join');
+} else if (MODE === 'signup') {
+  $('heading').textContent = 'Create your account';
+  $('lead').textContent = `Join ${INVITER}'s team on Madifyx Clips and start recording.`;
+  show('nameField'); $('password').autocomplete = 'new-password'; $('password').placeholder = '8 or more characters';
+  $('submit').textContent = 'Create account';
+  endpoint = '/api/signup';
+  show('toLogin');
+  document.title = document.title.replace('Sign in', 'Sign up');
+} else if (MODE === 'closed') {
+  $('heading').textContent = 'Sign ups are closed';
+  $('lead').textContent = 'Ask your admin to switch sign ups on, or to send you an invite link.';
+  ['emailField', 'pwField'].forEach(id => show(id, false));
+  $('submit').textContent = 'Go to sign in';
+  $('form').onsubmit = e => { e.preventDefault(); location.href = '/login'; };
+  document.title = document.title.replace('Sign in', 'Sign up');
 } else if (MODE === 'expired') {
   $('heading').textContent = "This link isn't active";
   $('lead').textContent = 'It may have been used, switched off or replaced. Ask your admin for a new one.';
@@ -101,9 +122,10 @@ if (MODE === 'setup') {
   $('form').onsubmit = e => { e.preventDefault(); location.href = '/login'; };
 } else {
   show('foot');
+  if (SIGNUP === '1') show('toSignup');
 }
 
-if (MODE !== 'expired') {
+if (MODE !== 'expired' && MODE !== 'closed') {
   ($('nameField').classList.contains('hidden') ? $('email') : $('name')).focus();
   $('form').addEventListener('submit', async e => {
     e.preventDefault();

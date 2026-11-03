@@ -19,7 +19,7 @@ Shortcuts while recording (with the app tab focused): Alt+Shift+P pause, Alt+Shi
 
 - The first time you open the app, it asks you to set up the **admin account**. That's you.
 - Set `OWNER_EMAIL` so only that email can create the owner account. That email is always an owner, even if it joined some other way.
-- **Team join link:** on the Team page, switch on the join link and share it with your team. Anyone who opens it creates their own profile. Switch it off, or make a new link, whenever you like.
+- **Sign up page:** on the Team page, switch on **Sign up page**. Your team can then create their own profiles at `/signup` (for example record.madifyx.com/signup), and the sign in page shows a "Create an account" link. Switch it off when everyone has joined.
 - **One-time invites:** click **Invite teammate** for a private link that works once and expires in 7 days (it can also make someone an admin).
 - Everyone can change their own name and password on the Account page.
 - **Members** record and see their own videos. **Admins** also invite people and can switch the library to "Whole team".

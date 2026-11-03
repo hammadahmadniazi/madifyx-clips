@@ -57,17 +57,16 @@
 
       <section class="panel hidden" id="joinPanel">
         <div class="panel-head">
-          <div><h2>Team join link</h2><p>One link for your whole team. Anyone who opens it creates their own profile as a member.</p></div>
+          <div><h2>Sign up page</h2><p>When it's on, your team can create their own profiles at your sign up page.</p></div>
           <label class="switch"><input type="checkbox" id="joinToggle" role="switch"><span></span><b id="joinState">Off</b></label>
         </div>
         <div id="joinBox" class="hidden">
           <div class="linkbox">
-            <input class="input" id="joinUrl" readonly aria-label="Team join link">
+            <input class="input" id="joinUrl" readonly aria-label="Sign up page address">
             <button class="btn primary" id="copyJoin">Copy</button>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
-            <span class="muted" style="font-size:13px">Only share it with your team. Turn it off when everyone has joined.</span>
-            <button class="btn ghost sm" id="resetJoin">Make a new link</button>
+            <span class="muted" style="font-size:13px">Anyone who finds this page can join as a member while it's on. Switch it off when your team has joined.</span>
           </div>
         </div>
       </section>
@@ -113,24 +112,20 @@
   } else {
     $('teamPanel').classList.remove('hidden');
     $('joinPanel').classList.remove('hidden');
-    loadPeople(); loadInvites(); showJoin(await api('/api/join-link'));
+    loadPeople(); loadInvites(); showJoin(await api('/api/signup-settings'));
   }
 
   function showJoin(j) {
-    $('joinToggle').checked = j.enabled;
-    $('joinState').textContent = j.enabled ? 'On' : 'Off';
-    $('joinBox').classList.toggle('hidden', !j.enabled);
+    $('joinToggle').checked = j.open;
+    $('joinState').textContent = j.open ? 'On' : 'Off';
+    $('joinBox').classList.toggle('hidden', !j.open);
     $('joinUrl').value = j.url || '';
   }
   $('joinToggle').onchange = async () => {
-    showJoin(await api('/api/join-link', $('joinToggle').checked ? 'POST' : 'DELETE'));
-    toast($('joinToggle').checked ? 'Join link turned on' : 'Join link turned off');
+    showJoin(await api('/api/signup-settings', 'POST', { open: $('joinToggle').checked }));
+    toast($('joinToggle').checked ? 'Sign ups are on' : 'Sign ups are off');
   };
-  $('copyJoin').onclick = () => copyText($('joinUrl').value, 'Join link copied');
-  $('resetJoin').onclick = async () => {
-    if (!confirm('Make a new link? The old one will stop working.')) return;
-    showJoin(await api('/api/join-link', 'POST')); toast('New join link ready');
-  };
+  $('copyJoin').onclick = () => copyText($('joinUrl').value, 'Sign up link copied');
 
   async function loadPeople() {
     const users = await api('/api/users');

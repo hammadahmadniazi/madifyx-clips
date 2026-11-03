@@ -311,11 +311,26 @@ const baseUrl = req => `${req.headers['x-forwarded-proto'] || (req.socket.encryp
 const redirect = (res, to) => { res.writeHead(302, { Location: to }); res.end(); };
 const canEdit = (user, v) => user.role === 'owner' || v.ownerId === user.id;
 
+// A fingerprint of the app's files. It changes with every update, so browsers
+// always load the newest styles and scripts instead of an old saved copy.
+const ASSET_VERSION = (() => {
+  const h = crypto.createHash('sha1');
+  const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).forEach(e => {
+    const f = path.join(dir, e.name);
+    if (e.isDirectory()) walk(f); else h.update(e.name).update(fs.readFileSync(f));
+  });
+  walk(path.join(__dirname, 'public'));
+  return h.digest('hex').slice(0, 10);
+})();
+
 function page(file, vars = {}) {
   let html = fs.readFileSync(path.join(PUBLIC_DIR, file), 'utf8').replaceAll('{{APP_NAME}}', escapeHtml(APP_NAME));
   for (const [k, v] of Object.entries(vars)) html = html.replaceAll(`{{${k}}}`, v);
-  return html;
+  html = html.replace(/{{[A-Z_]+}}/g, '');
+  return html.replace(/(["'(])\/static\/([\w./-]+\.(?:css|js|png|svg))(?=["')])/g, `$1/static/$2?v=${ASSET_VERSION}`);
 }
+const signupOpen = () => !!db.settings.openSignup;
+const ownerName = () => { const o = Object.values(db.users).find(u => u.role === 'owner'); return escapeHtml(o ? o.name : 'Your team'); };
 
 // ---------- upload ----------
 function handleUpload(req, res, query, user) {
@@ -382,7 +397,11 @@ const server = http.createServer(async (req, res) => {
       }
       return send(res, 404, 'Not found');
     }
-    if ((m === 'GET' || m === 'HEAD') && p.startsWith('/static/')) return serveFile(req, res, PUBLIC_DIR, p.slice(8), 3600);
+    if ((m === 'GET' || m === 'HEAD') && p.startsWith('/static/')) {
+      // Versioned links (?v=...) can be kept for a year; anything else is checked every time
+      if (url.searchParams.get('v') === ASSET_VERSION) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return serveFile(req, res, PUBLIC_DIR, p.slice(8), url.searchParams.has('v') ? 31536000 : 0);
+    }
 
     // Share page (public)
     if (m === 'GET' && (match = /^\/v\/([\w-]+)$/.exec(p))) {
@@ -466,15 +485,15 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
-    // ---------- team join link (reusable, can be turned off) ----------
-    if ((match = /^\/join\/([\w-]+)$/.exec(p)) && m === 'GET') {
-      const ok = db.settings.joinCode && match[1] === db.settings.joinCode;
-      if (!ok) return send(res, 200, page('login.html', { MODE: 'expired', INVITER: '' }), MIME['.html']);
-      const owner = Object.values(db.users).find(u => u.role === 'owner');
-      return send(res, 200, page('login.html', { MODE: 'invite', INVITER: escapeHtml(owner ? owner.name : 'Your team') }), MIME['.html']);
+    // ---------- self sign up at /signup (admins can switch it on or off) ----------
+    if (m === 'GET' && (p === '/signup' || /^\/join\/[\w-]+$/.test(p))) {
+      if (!hasUsers()) return redirect(res, '/setup');
+      if (p !== '/signup') return redirect(res, '/signup');
+      if (currentUser(req)) return redirect(res, '/');
+      return send(res, 200, page('login.html', { MODE: signupOpen() ? 'signup' : 'closed', INVITER: ownerName() }), MIME['.html']);
     }
-    if ((match = /^\/api\/join\/([\w-]+)$/.exec(p)) && m === 'POST') {
-      if (!db.settings.joinCode || match[1] !== db.settings.joinCode) return json(res, 410, { error: 'This join link is no longer active. Ask your admin for the new one.' });
+    if (m === 'POST' && p === '/api/signup') {
+      if (!signupOpen()) return json(res, 403, { error: 'Sign ups are closed. Ask your admin for an invite.' });
       if (limited('j:' + clientIp(req), 10, 60 * 60e3)) return json(res, 429, { error: 'Too many sign ups from here. Try again later.' });
       const body = await readJson(req);
       const v = validateNewUser(body);
@@ -504,7 +523,7 @@ const server = http.createServer(async (req, res) => {
     if (m === 'GET' && p === '/login') {
       if (!hasUsers()) return redirect(res, '/setup');
       if (currentUser(req)) return redirect(res, '/');
-      return send(res, 200, page('login.html', { MODE: 'login', INVITER: '' }), MIME['.html']);
+      return send(res, 200, page('login.html', { MODE: 'login', SIGNUP: signupOpen() ? '1' : '' }), MIME['.html']);
     }
     if (m === 'POST' && p === '/api/login') {
       const ip = clientIp(req);
@@ -552,13 +571,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, publicUser(user));
     }
 
-    // Team join link (owner only)
-    if (p === '/api/join-link') {
-      if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can manage the join link' });
-      if (m === 'POST') { db.settings.joinCode = crypto.randomBytes(9).toString('base64url'); saveDb(); }
-      if (m === 'DELETE') { db.settings.joinCode = null; saveDb(); }
-      const code = db.settings.joinCode;
-      return json(res, 200, { enabled: !!code, url: code ? `${baseUrl(req)}/join/${code}` : null });
+    // Self sign up switch (owner only)
+    if (p === '/api/signup-settings') {
+      if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can change sign up settings' });
+      if (m === 'POST') { const body = await readJson(req); db.settings.openSignup = !!body.open; saveDb(); }
+      return json(res, 200, { open: signupOpen(), url: `${baseUrl(req)}/signup` });
     }
 
     // Invites (owner only)
