@@ -57,9 +57,10 @@
 
       <section class="panel hidden" id="joinPanel">
         <div class="panel-head">
-          <div><h2>Sign up page</h2><p>When it's on, your team can create their own profiles at your sign up page.</p></div>
+          <div><h2>Sign up page</h2><p>When it's on, your team can create their own profiles at your sign up page. Everyone confirms their email with a code first.</p></div>
           <label class="switch"><input type="checkbox" id="joinToggle" role="switch"><span></span><b id="joinState">Off</b></label>
         </div>
+        <p class="msg hidden" id="emailNote" style="margin:0 0 4px;color:var(--warn)">Sign ups need email verification. Add your email service settings in Render (RESEND_API_KEY and MAIL_FROM) to switch this on.</p>
         <div id="joinBox" class="hidden">
           <div class="linkbox">
             <input class="input" id="joinUrl" readonly aria-label="Sign up page address">
@@ -117,12 +118,15 @@
 
   function showJoin(j) {
     $('joinToggle').checked = j.open;
+    $('joinToggle').disabled = !j.emailReady;
+    $('emailNote').classList.toggle('hidden', !!j.emailReady);
     $('joinState').textContent = j.open ? 'On' : 'Off';
     $('joinBox').classList.toggle('hidden', !j.open);
     $('joinUrl').value = j.url || '';
   }
   $('joinToggle').onchange = async () => {
-    showJoin(await api('/api/signup-settings', 'POST', { open: $('joinToggle').checked }));
+    try { showJoin(await api('/api/signup-settings', 'POST', { open: $('joinToggle').checked })); }
+    catch (err) { $('joinToggle').checked = false; alert(err.message); return; }
     toast($('joinToggle').checked ? 'Sign ups are on' : 'Sign ups are off');
   };
   $('copyJoin').onclick = () => copyText($('joinUrl').value, 'Sign up link copied');

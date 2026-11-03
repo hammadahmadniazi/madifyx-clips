@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const { storage } = require('./storage');
+const { sendMail, verificationEmail, mailReady } = require('./mailer');
 
 const PORT = process.env.PORT || 3000;
 const APP_NAME = process.env.APP_NAME || 'Madifyx Clips';
@@ -26,7 +27,7 @@ let db = { videos: {}, users: {}, sessions: {} };
 if (fs.existsSync(DB_FILE)) {
   try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { console.error('Could not read db.json', e); }
 }
-db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {};
+db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; db.pending ||= {};
 let saveTimer = null;
 function saveDb() {
   clearTimeout(saveTimer);
@@ -53,7 +54,7 @@ function pushDb(delay = 1500) {
     }, delay);
   });
 }
-function normalizeDb() { db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; }
+function normalizeDb() { db.videos ||= {}; db.users ||= {}; db.sessions ||= {}; db.invites ||= {}; db.settings ||= {}; db.pending ||= {}; }
 // Make sure the owner email always has owner rights
 function applyOwnerEmail() {
   if (!OWNER_EMAIL) return;
@@ -300,9 +301,9 @@ function validateNewUser(body) {
   if (findUserByEmail(email)) return { error: 'That email already has an account' };
   return { name, email, password };
 }
-function addUser({ name, email, password }, role) {
+function addUser({ name, email, password, salt: s0, hash: h0 }, role) {
   const id = crypto.randomBytes(8).toString('base64url');
-  const { salt, hash } = hashPassword(password);
+  const { salt, hash } = s0 && h0 ? { salt: s0, hash: h0 } : hashPassword(password);
   db.users[id] = { id, name, email, role, salt, hash, createdAt: new Date().toISOString() };
   saveDb();
   return db.users[id];
@@ -329,7 +330,50 @@ function page(file, vars = {}) {
   html = html.replace(/{{[A-Z_]+}}/g, '');
   return html.replace(/(["'(])\/static\/([\w./-]+\.(?:css|js|png|svg))(?=["')])/g, `$1/static/$2?v=${ASSET_VERSION}`);
 }
-const signupOpen = () => !!db.settings.openSignup;
+// Sign ups need email verification, so they only work once email sending is set up
+const signupOpen = () => !!db.settings.openSignup && mailReady();
+
+// ---------- email verification ----------
+// New accounts wait here until the person enters the code from their email
+// (or clicks the link). Nothing is created for an email its owner never confirmed.
+const sha = s => crypto.createHash('sha256').update(String(s)).digest('hex');
+const PENDING_MINUTES = 30;
+async function startVerification(req, v, role, inviteToken) {
+  for (const [k, pend] of Object.entries(db.pending)) if (pend.email === v.email || pend.expires < Date.now()) delete db.pending[k];
+  const { salt, hash } = hashPassword(v.password);
+  const pend = {
+    id: crypto.randomBytes(18).toString('base64url'),
+    linkToken: crypto.randomBytes(24).toString('base64url'),
+    name: v.name, email: v.email, salt, hash, role, inviteToken: inviteToken || null,
+    expires: Date.now() + PENDING_MINUTES * 60e3, attempts: 0, sends: 0, sentAt: 0,
+  };
+  db.pending[pend.id] = pend;
+  await sendCode(req, pend);
+  saveDb();
+  return pend;
+}
+async function sendCode(req, pend) {
+  const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+  pend.codeHash = sha(pend.id + code); pend.attempts = 0; pend.sends++; pend.sentAt = Date.now();
+  pend.expires = Date.now() + PENDING_MINUTES * 60e3;
+  const base = baseUrl(req);
+  const mail = verificationEmail({ appName: APP_NAME, name: pend.name, code, link: `${base}/verify/${pend.linkToken}`, logoUrl: `${base}/static/brand/logo.png` });
+  await sendMail({ to: pend.email, ...mail });
+}
+function finishVerification(req, res, pend) {
+  delete db.pending[pend.id];
+  if (findUserByEmail(pend.email)) { saveDb(); return { error: 'That email already has an account. Sign in instead.' }; }
+  let role = pend.role;
+  if (pend.inviteToken) {
+    const inv = db.invites[pend.inviteToken];
+    if (!inv || inv.expires < Date.now()) { saveDb(); return { error: 'This invite has expired. Ask for a new one.' }; }
+    delete db.invites[pend.inviteToken];
+  }
+  if (pend.email === OWNER_EMAIL) role = 'owner';
+  const user = addUser({ name: pend.name, email: pend.email, salt: pend.salt, hash: pend.hash }, role);
+  createSession(req, res, user);
+  return { user };
+}
 const ownerName = () => { const o = Object.values(db.users).find(u => u.role === 'owner'); return escapeHtml(o ? o.name : 'Your team'); };
 
 // ---------- upload ----------
@@ -479,7 +523,13 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const v = validateNewUser(body);
       if (v.error) return json(res, 400, v);
-      const user = addUser(v, inv.role === 'owner' || v.email === OWNER_EMAIL ? 'owner' : 'member');
+      const role = inv.role === 'owner' ? 'owner' : 'member';
+      if (mailReady()) {
+        if (limited('j:' + clientIp(req), 10, 60 * 60e3)) return json(res, 429, { error: 'Too many sign ups from here. Try again later.' });
+        try { const pend = await startVerification(req, v, role, match[1]); return json(res, 200, { verify: true, id: pend.id, email: pend.email }); }
+        catch (e) { console.error('Could not send verification email:', e.message); return json(res, 502, { error: "We couldn't send the verification email. Try again in a minute." }); }
+      }
+      const user = addUser(v, role === 'owner' || v.email === OWNER_EMAIL ? 'owner' : 'member');
       delete db.invites[match[1]]; saveDb();
       createSession(req, res, user);
       return json(res, 200, { ok: true });
@@ -498,9 +548,36 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const v = validateNewUser(body);
       if (v.error) return json(res, 400, v);
-      const user = addUser(v, v.email === OWNER_EMAIL ? 'owner' : 'member');
-      createSession(req, res, user);
-      return json(res, 200, { ok: true });
+      try { const pend = await startVerification(req, v, 'member'); return json(res, 200, { verify: true, id: pend.id, email: pend.email }); }
+      catch (e) { console.error('Could not send verification email:', e.message); return json(res, 502, { error: "We couldn't send the verification email. Try again in a minute." }); }
+    }
+
+    // ---------- confirm email: by code, by link, or ask for a new code ----------
+    if (m === 'POST' && p === '/api/verify') {
+      const body = await readJson(req);
+      const pend = db.pending[String(body.id || '')];
+      if (!pend || pend.expires < Date.now()) return json(res, 410, { error: 'This code has expired. Start again to get a new one.' });
+      if (pend.attempts >= 5) return json(res, 429, { error: 'Too many wrong codes. Ask for a new code.' });
+      const code = String(body.code || '').replace(/\D/g, '');
+      if (sha(pend.id + code) !== pend.codeHash) { pend.attempts++; saveDb(); return json(res, 400, { error: `That code isn't right. ${5 - pend.attempts} tries left.` }); }
+      const r = finishVerification(req, res, pend);
+      return r.error ? json(res, 409, r) : json(res, 200, { ok: true });
+    }
+    if (m === 'POST' && p === '/api/verify/resend') {
+      const body = await readJson(req);
+      const pend = db.pending[String(body.id || '')];
+      if (!pend || pend.expires < Date.now()) return json(res, 410, { error: 'This sign up has expired. Start again.' });
+      if (pend.sends >= 5) return json(res, 429, { error: 'Too many codes sent. Start again in a while.' });
+      const wait = Math.ceil((pend.sentAt + 60e3 - Date.now()) / 1000);
+      if (wait > 0) return json(res, 429, { error: `Wait ${wait} seconds before asking for a new code.` });
+      try { await sendCode(req, pend); saveDb(); return json(res, 200, { ok: true }); }
+      catch (e) { console.error('Could not send verification email:', e.message); return json(res, 502, { error: "We couldn't send the email. Try again in a minute." }); }
+    }
+    if (m === 'GET' && (match = /^\/verify\/([\w-]+)$/.exec(p))) {
+      const pend = Object.values(db.pending).find(x => x.linkToken === match[1]);
+      if (!pend || pend.expires < Date.now()) return send(res, 200, page('login.html', { MODE: 'expired' }), MIME['.html']);
+      const r = finishVerification(req, res, pend);
+      return r.error ? send(res, 200, page('login.html', { MODE: 'expired' }), MIME['.html']) : redirect(res, '/');
     }
 
     // ---------- sign in / first time setup ----------
@@ -574,8 +651,12 @@ const server = http.createServer(async (req, res) => {
     // Self sign up switch (owner only)
     if (p === '/api/signup-settings') {
       if (user.role !== 'owner') return json(res, 403, { error: 'Only admins can change sign up settings' });
-      if (m === 'POST') { const body = await readJson(req); db.settings.openSignup = !!body.open; saveDb(); }
-      return json(res, 200, { open: signupOpen(), url: `${baseUrl(req)}/signup` });
+      if (m === 'POST') {
+        const body = await readJson(req);
+        if (body.open && !mailReady()) return json(res, 400, { error: 'Set up email sending first, so new accounts can confirm their email.' });
+        db.settings.openSignup = !!body.open; saveDb();
+      }
+      return json(res, 200, { open: signupOpen(), emailReady: mailReady(), url: `${baseUrl(req)}/signup` });
     }
 
     // Invites (owner only)
@@ -675,6 +756,7 @@ const server = http.createServer(async (req, res) => {
 setInterval(() => {
   let changed = false;
   for (const [t, ses] of Object.entries(db.sessions)) if (ses.expires < Date.now()) { delete db.sessions[t]; changed = true; }
+  for (const [k, pend] of Object.entries(db.pending)) if (pend.expires < Date.now()) { delete db.pending[k]; changed = true; }
   if (changed) saveDb();
 }, 3600e3).unref();
 
@@ -701,6 +783,8 @@ async function start() {
 // Save the database before the host shuts the app down
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, async () => {
+    // Write anything still waiting to be saved before exiting
+    if (saveTimer) { clearTimeout(saveTimer); const tmp = DB_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(db, null, 2)); fs.renameSync(tmp, DB_FILE); }
     if (storage.enabled) await pushDb(0);
     process.exit(0);
   });
@@ -710,6 +794,7 @@ start();
 function listen() { server.listen(PORT, () => {
   console.log(`${APP_NAME} running at http://localhost:${PORT}`);
   console.log(HAS_FFMPEG ? 'ffmpeg found: videos will be converted to mp4 with thumbnails.' : 'ffmpeg not found: videos are kept as recorded (install ffmpeg for mp4 + thumbnails).');
+  console.log(mailReady() ? 'Email verification is on.' : 'Email sending is not set up, so self sign up stays off.');
   console.log(storage.enabled ? 'Videos and data are saved to cloud storage.' : 'Videos and data are saved on this computer in ' + DATA_DIR);
   if (!hasUsers()) console.log(`First time? Open http://localhost:${PORT} to create your owner account${OWNER_EMAIL ? ' with ' + OWNER_EMAIL : ''}.`);
 }); }

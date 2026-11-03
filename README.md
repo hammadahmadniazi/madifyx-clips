@@ -22,6 +22,7 @@ Shortcuts while recording (with the app tab focused): Alt+Shift+P pause, Alt+Shi
 - **Sign up page:** on the Team page, switch on **Sign up page**. Your team can then create their own profiles at `/signup` (for example record.madifyx.com/signup), and the sign in page shows a "Create an account" link. Switch it off when everyone has joined.
 - **One-time invites:** click **Invite teammate** for a private link that works once and expires in 7 days (it can also make someone an admin).
 - Everyone can change their own name and password on the Account page.
+- **Email verification:** new accounts (sign up page and invites) get a 6-digit code by email and are only created once the code, or the button in the email, is used. This needs an email service: create a free [Resend](https://resend.com) account, add and verify your domain there, then set `RESEND_API_KEY` and `MAIL_FROM` (for example `Madifyx Clips <clips@madifyx.com>`). The sign up page can only be switched on once email is set up.
 - **Members** record and see their own videos. **Admins** also invite people and can switch the library to "Whole team".
 - Removing someone moves their videos to you, so their links keep working.
 - Video pages (`/v/...`) never need a login.
@@ -99,6 +100,9 @@ To update later: copy the new files over and run the same `docker compose up -d 
 | `DATA_DIR` | ./data | Where videos, accounts and the database live |
 | `SESSION_DAYS` | 30 | How long people stay signed in |
 | `OWNER_EMAIL` | (empty) | Only this email can set up the workspace, and it always has owner rights |
+| `RESEND_API_KEY` | (empty) | Resend key for sending verification emails |
+| `MAIL_FROM` | (empty) | Sender, e.g. `Madifyx Clips <clips@madifyx.com>` (the domain must be verified in Resend) |
+| `MAIL_DEV` | (empty) | Set to 1 on your own computer to print emails in the terminal instead of sending them |
 | `MAX_UPLOAD_MB` | 2048 | Largest upload allowed |
 | `KEEP_ORIGINAL` | 0 | Set to 1 to keep the raw recording after mp4 conversion |
 | `S3_ENDPOINT` | (empty) | Cloud storage address, e.g. your Cloudflare R2 endpoint. When the four S3 settings are set, videos and data are kept there |

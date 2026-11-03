@@ -38,6 +38,8 @@
   .switchline { margin: 2px 0 0; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); text-align: center; }
   .switchline a { color: var(--brand-ink); font-weight: 600; }
   .switchline a:hover { text-decoration: underline; }
+  .input.code { height: 58px; text-align: center; font: 600 28px var(--mono); letter-spacing: .4em; padding-left: .4em; }
+  .lead b { color: var(--ink); font-weight: 600; }
   .mobile-logo { display: none; }
   @media (max-width: 900px) {
     body { grid-template-columns: 1fr; }
@@ -67,12 +69,14 @@
 
     <label class="field hidden" id="nameField"><span>Your name</span><input class="input" id="name" autocomplete="name" maxlength="80"></label>
     <label class="field" id="emailField"><span>Email</span><input class="input" id="email" type="email" autocomplete="email"></label>
+    <label class="field hidden" id="codeField"><span>6-digit code</span><input class="input code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000"></label>
     <label class="field" id="pwField"><span>Password</span><input class="input" id="password" type="password" autocomplete="current-password"></label>
 
     <div class="err hidden" id="err" role="alert"></div>
     <button class="btn primary block" style="height:46px" id="submit">Sign in</button>
     <p class="muted hidden" id="foot" style="font-size:13px;margin:0">Forgot your password? Ask your admin to set a new one.</p>
     <p class="switchline hidden" id="toSignup">New to the team? <a href="/signup">Create an account</a></p>
+    <p class="switchline hidden" id="resendLine">No email? Check spam, or <a href="#" id="resend">send a new code</a></p>
     <p class="switchline hidden" id="toLogin">Already have an account? <a href="/login">Sign in</a></p>
   </form>
 </div>
@@ -141,11 +145,63 @@ if (MODE !== 'expired' && MODE !== 'closed') {
       const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again.');
+      if (j.verify) return askForCode(j.id, j.email);
       location.href = '/';
     } catch (err) {
       $('err').textContent = err.message; show('err');
       $('submit').disabled = false;
     }
+  });
+}
+
+// Step two: the code from the email
+function askForCode(id, email) {
+  ['nameField', 'emailField', 'pwField', 'toLogin', 'toSignup', 'foot'].forEach(x => show(x, false));
+  show('codeField'); show('resendLine'); show('err', false);
+  $('heading').textContent = 'Check your email';
+  $('lead').innerHTML = 'We sent a 6-digit code to <b></b>. Enter it below, or click the button in the email.';
+  $('lead').querySelector('b').textContent = email;
+  $('submit').textContent = 'Confirm and continue';
+  $('submit').disabled = false;
+  $('code').focus();
+  $('code').addEventListener('input', () => {
+    const digits = $('code').value.replace(/\D/g, '').slice(0, 6);
+    $('code').value = digits;
+    if (digits.length === 6) $('form').requestSubmit();
+  });
+  const fresh = $('form').cloneNode(true); // drop the first step's handler
+  $('form').replaceWith(fresh);
+  $('code').focus();
+  fresh.addEventListener('submit', async e => {
+    e.preventDefault();
+    show('err', false);
+    const code = $('code').value.replace(/\D/g, '');
+    if (code.length !== 6) { $('err').textContent = 'Enter all 6 digits.'; show('err'); return; }
+    $('submit').disabled = true;
+    try {
+      const r = await fetch('/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, code }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again.');
+      location.href = '/';
+    } catch (err) {
+      $('err').textContent = err.message; show('err');
+      $('submit').disabled = false; $('code').select();
+    }
+  });
+  $('code').addEventListener('input', () => {
+    const digits = $('code').value.replace(/\D/g, '').slice(0, 6);
+    $('code').value = digits;
+    if (digits.length === 6) fresh.requestSubmit();
+  });
+  $('resend').addEventListener('click', async e => {
+    e.preventDefault();
+    try {
+      const r = await fetch('/api/verify/resend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again.');
+      $('err').textContent = 'New code sent. Use the newest email.'; show('err');
+      $('err').style.color = 'var(--ok)';
+    } catch (err) { $('err').textContent = err.message; $('err').style.color = ''; show('err'); }
   });
 }
 </script>

@@ -12,6 +12,10 @@ services:
         value: Madifyx Clips
       - key: OWNER_EMAIL
         value: hammadahmad811@gmail.com
+      - key: MAIL_FROM
+        value: Madifyx Clips <clips@madifyx.com>
+      - key: RESEND_API_KEY
+        sync: false
       - key: S3_ENDPOINT
         sync: false
       - key: S3_BUCKET
